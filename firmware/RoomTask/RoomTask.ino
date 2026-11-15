@@ -19,7 +19,8 @@ const byte LCD_ROWS = 2;
 
 const byte MAX_TASKS = 8;
 const byte TASK_LENGTH = 41;            // 40 visible characters plus null terminator.
-const unsigned long PAGE_INTERVAL_MS = 2500;
+// Each reminder stays on the LCD for at least 10 seconds.
+const unsigned long PAGE_INTERVAL_MS = 10000;
 
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS);
 
