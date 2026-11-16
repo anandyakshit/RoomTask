@@ -21,6 +21,9 @@ const byte MAX_TASKS = 8;
 const byte TASK_LENGTH = 41;            // 40 visible characters plus null terminator.
 // Each reminder stays on the LCD for at least 10 seconds.
 const unsigned long PAGE_INTERVAL_MS = 10000;
+// Ignore new motion triggers for 30 seconds after a reminder cycle finishes.
+// Change to 15UL * 60UL * 1000UL for a 15-minute cooldown.
+const unsigned long REMINDER_COOLDOWN_MS = 30000;
 
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS);
 
@@ -31,6 +34,8 @@ bool previousPirState = false;
 bool showingTasks = false;
 byte displayedTask = 0;
 unsigned long lastPageChange = 0;
+unsigned long cooldownStartedAt = 0;
+bool cooldownActive = false;
 
 String serialBuffer;
 
@@ -164,7 +169,10 @@ void updateReminderDisplay() {
 
     if (displayedTask >= taskCount) {
       showingTasks = false;
+      cooldownStartedAt = millis();
+      cooldownActive = true;
       showIdleScreen();
+      Serial.println(F("Reminder cycle finished. Motion trigger cooldown started."));
       return;
     }
 
@@ -187,8 +195,14 @@ void setup() {
 void loop() {
   readSerialCommands();
 
+  // Expire the cooldown without blocking Serial or LCD updates.
+  if (cooldownActive && millis() - cooldownStartedAt >= REMINDER_COOLDOWN_MS) {
+    cooldownActive = false;
+    Serial.println(F("Motion trigger cooldown ended."));
+  }
+
   bool pirState = digitalRead(PIR_PIN) == HIGH;
-  if (pirState && !previousPirState) {
+  if (pirState && !previousPirState && !showingTasks && !cooldownActive) {
     startReminderCycle();
   }
   previousPirState = pirState;
