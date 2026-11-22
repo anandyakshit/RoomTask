@@ -1,29 +1,32 @@
 /*
-  RoomTask v0.1
+  RoomTask: Arduino Motion-Activated Task Reminder
   Board: Arduino UNO R4 Minima
-  Inputs: PIR motion sensor
-  Output: 16x2 I2C LCD
+  Inputs: PIR motion sensor (Pin D2)
+  Output: 16x2 I2C LCD (SDA / SCL)
+  Communication: 
+    - USB Serial (115200 baud)
+    - Bluetooth UART / Serial1 (Pins 0 RX, 1 TX at 9600 baud)
   Commands: ADD <text>, LIST, CLEAR, HELP
 
   Reminders are stored in RAM and are cleared on reset/power loss.
-  Check hardware/README.md before wiring or uploading.
+  Check hardware/README.md before wiring.
 */
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-const byte PIR_PIN = 2;                 // Provisional: change to match your wiring.
-const byte LCD_ADDRESS = 0x27;          // Common default; scan/change if your module differs.
+const byte PIR_PIN = 2;                 // Digital pin for PIR motion sensor
+const byte LCD_ADDRESS = 0x27;          // Default I2C address (change to 0x3F if needed)
 const byte LCD_COLUMNS = 16;
 const byte LCD_ROWS = 2;
 
+const unsigned long USB_BAUD_RATE = 115200;
+const unsigned long BT_BAUD_RATE  = 9600;   // Default baud for HC-05 / HC-06 / HM-10
+
 const byte MAX_TASKS = 8;
-const byte TASK_LENGTH = 41;            // 40 visible characters plus null terminator.
-// Each reminder stays on the LCD for at least 10 seconds.
-const unsigned long PAGE_INTERVAL_MS = 10000;
-// Ignore new motion triggers for 30 seconds after a reminder cycle finishes.
-// Change to 15UL * 60UL * 1000UL for a 15-minute cooldown.
-const unsigned long REMINDER_COOLDOWN_MS = 30000;
+const byte TASK_LENGTH = 41;            // 40 characters plus null terminator
+const unsigned long PAGE_INTERVAL_MS = 10000;    // 10s per reminder on LCD
+const unsigned long REMINDER_COOLDOWN_MS = 30000; // 30s cooldown after display cycle
 
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS);
 
@@ -37,14 +40,46 @@ unsigned long lastPageChange = 0;
 unsigned long cooldownStartedAt = 0;
 bool cooldownActive = false;
 
-String serialBuffer;
+String usbBuffer;
+String btBuffer;
+
+// Broadcast text to both USB Serial and Bluetooth UART
+void broadcastPrint(const __FlashStringHelper *ifsh) {
+  Serial.print(ifsh);
+  Serial1.print(ifsh);
+}
+
+void broadcastPrintln(const __FlashStringHelper *ifsh) {
+  Serial.println(ifsh);
+  Serial1.println(ifsh);
+}
+
+void broadcastPrint(const String &text) {
+  Serial.print(text);
+  Serial1.print(text);
+}
+
+void broadcastPrintln(const String &text = "") {
+  Serial.println(text);
+  Serial1.println(text);
+}
+
+void broadcastPrint(int val) {
+  Serial.print(val);
+  Serial1.print(val);
+}
+
+void broadcastPrintln(int val) {
+  Serial.println(val);
+  Serial1.println(val);
+}
 
 void printHelp() {
-  Serial.println(F("RoomTask v0.1 commands:"));
-  Serial.println(F("  ADD <text> - add a reminder"));
-  Serial.println(F("  LIST       - list saved reminders"));
-  Serial.println(F("  CLEAR      - remove all reminders"));
-  Serial.println(F("  HELP       - show this help"));
+  broadcastPrintln(F("RoomTask commands (USB 115200 / BT 9600):"));
+  broadcastPrintln(F("  ADD <text> - add a reminder"));
+  broadcastPrintln(F("  LIST       - list saved reminders"));
+  broadcastPrintln(F("  CLEAR      - remove all reminders"));
+  broadcastPrintln(F("  HELP       - show this help"));
 }
 
 void showIdleScreen() {
@@ -62,7 +97,7 @@ void showCurrentTask() {
     lcd.setCursor(0, 0);
     lcd.print(F("No reminders"));
     lcd.setCursor(0, 1);
-    lcd.print(F("Use ADD via USB"));
+    lcd.print(F("ADD via BT / USB"));
     return;
   }
 
@@ -74,40 +109,40 @@ void showCurrentTask() {
   lcd.print(taskCount);
 
   lcd.setCursor(0, 1);
-  // LCD displays the first 16 characters; longer tasks are stored in full.
+  // LCD displays the first 16 characters; longer tasks are stored in full
   lcd.print(tasks[displayedTask]);
 }
 
 void addTask(const String &taskText) {
   if (taskText.length() == 0) {
-    Serial.println(F("Usage: ADD <text>"));
+    broadcastPrintln(F("Usage: ADD <text>"));
     return;
   }
 
   if (taskCount >= MAX_TASKS) {
-    Serial.println(F("Task list full. Use CLEAR before adding more."));
+    broadcastPrintln(F("Task list full. Use CLEAR before adding more."));
     return;
   }
 
   taskText.substring(0, TASK_LENGTH - 1).toCharArray(tasks[taskCount], TASK_LENGTH);
   taskCount++;
 
-  Serial.print(F("Added: "));
-  Serial.println(tasks[taskCount - 1]);
+  broadcastPrint(F("Added: "));
+  broadcastPrintln(tasks[taskCount - 1]);
   showIdleScreen();
 }
 
 void listTasks() {
   if (taskCount == 0) {
-    Serial.println(F("No reminders saved."));
+    broadcastPrintln(F("No reminders saved."));
     return;
   }
 
-  Serial.println(F("Saved reminders:"));
+  broadcastPrintln(F("Saved reminders:"));
   for (byte i = 0; i < taskCount; i++) {
-    Serial.print(i + 1);
-    Serial.print(F(". "));
-    Serial.println(tasks[i]);
+    broadcastPrint(i + 1);
+    broadcastPrint(F(". "));
+    broadcastPrintln(tasks[i]);
   }
 }
 
@@ -125,31 +160,37 @@ void handleCommand(String command) {
   } else if (upper == "CLEAR") {
     taskCount = 0;
     showingTasks = false;
-    Serial.println(F("All reminders cleared."));
+    broadcastPrintln(F("All reminders cleared."));
     showIdleScreen();
   } else if (upper.startsWith("ADD ")) {
     addTask(command.substring(4));
   } else {
-    Serial.println(F("Unknown command. Enter HELP."));
+    broadcastPrintln(F("Unknown command. Enter HELP."));
+  }
+}
+
+// Read commands non-blockingly from an input stream
+void readStream(Stream &stream, String &buffer) {
+  while (stream.available() > 0) {
+    char incoming = (char)stream.read();
+
+    if (incoming == '\n' || incoming == '\r') {
+      if (buffer.length() > 0) {
+        handleCommand(buffer);
+        buffer = "";
+      }
+    } else if (buffer.length() < 100) {
+      buffer += incoming;
+    } else {
+      buffer = "";
+      broadcastPrintln(F("Command too long; buffer cleared."));
+    }
   }
 }
 
 void readSerialCommands() {
-  while (Serial.available() > 0) {
-    char incoming = (char)Serial.read();
-
-    if (incoming == '\n' || incoming == '\r') {
-      if (serialBuffer.length() > 0) {
-        handleCommand(serialBuffer);
-        serialBuffer = "";
-      }
-    } else if (serialBuffer.length() < 100) {
-      serialBuffer += incoming;
-    } else {
-      serialBuffer = "";
-      Serial.println(F("Command too long; buffer cleared."));
-    }
-  }
+  readStream(Serial, usbBuffer);
+  readStream(Serial1, btBuffer);
 }
 
 void startReminderCycle() {
@@ -157,7 +198,7 @@ void startReminderCycle() {
   displayedTask = 0;
   lastPageChange = millis();
   showCurrentTask();
-  Serial.println(F("Motion detected: showing reminders."));
+  broadcastPrintln(F("Motion detected: showing reminders."));
 }
 
 void updateReminderDisplay() {
@@ -172,7 +213,7 @@ void updateReminderDisplay() {
       cooldownStartedAt = millis();
       cooldownActive = true;
       showIdleScreen();
-      Serial.println(F("Reminder cycle finished. Motion trigger cooldown started."));
+      broadcastPrintln(F("Reminder cycle finished. Motion trigger cooldown started."));
       return;
     }
 
@@ -182,23 +223,27 @@ void updateReminderDisplay() {
 
 void setup() {
   pinMode(PIR_PIN, INPUT);
-  Serial.begin(115200);
+
+  // USB CDC Serial
+  Serial.begin(USB_BAUD_RATE);
+  // Bluetooth UART Serial1 (Pins 0 RX, 1 TX)
+  Serial1.begin(BT_BAUD_RATE);
 
   lcd.init();
   lcd.backlight();
   showIdleScreen();
 
-  Serial.println(F("\nRoomTask v0.1 ready."));
+  broadcastPrintln(F("\nRoomTask ready. Dual Serial (USB 115200 & Bluetooth 9600) active."));
   printHelp();
 }
 
 void loop() {
   readSerialCommands();
 
-  // Expire the cooldown without blocking Serial or LCD updates.
+  // Expire the cooldown without blocking Serial or LCD updates
   if (cooldownActive && millis() - cooldownStartedAt >= REMINDER_COOLDOWN_MS) {
     cooldownActive = false;
-    Serial.println(F("Motion trigger cooldown ended."));
+    broadcastPrintln(F("Motion trigger cooldown ended."));
   }
 
   bool pirState = digitalRead(PIR_PIN) == HIGH;

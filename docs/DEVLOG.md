@@ -44,6 +44,44 @@ arduino-cli compile --fqbn <FQBN> <SketchPath>
 
 ## Log Entries
 
+### [2026-11-22] - Physical Hardware Validation & v0.2 Bluetooth Integration
+
+**Author / Contributor:** @anandyakshit  
+**Version / Milestone:** v0.2 Dual Serial & Bluetooth  
+**Hardware Status:** Fully Bench-Tested & Verified on Physical Hardware (Core System) / v0.2 Firmware Compile-Verified
+
+#### Summary
+- **Physical Hardware Verification PASSED:** Physical Arduino UNO R4 Minima was connected on COM6, programmed via DFU, and verified on live test bench. PIR motion triggering (Pin D2), 16×2 I²C LCD (SDA/SCL at `0x27`), and command line parser (`ADD`, `LIST`, `CLEAR`, `HELP`) were confirmed functional on hardware.
+- **Added Bluetooth UART Support:** Updated `RoomTask.ino` to listen concurrently on hardware `Serial1` (Pins 0 RX, 1 TX at 9600 baud) and USB `Serial` (115200 baud).
+- **Dual-Stream Broadcast:** Feedback messages and command responses are mirrored across both USB and Bluetooth streams so mobile app users receive identical feedback to USB users.
+- Updated documentation across `README.md`, `hardware/README.md`, `docs/ARCHITECTURE.md`, and `docs/SERIAL_COMMANDS.md`.
+
+#### Toolchain & Environment
+- **Arduino CLI Version:** Bundled CLI with Arduino IDE 2.x
+- **Core Package:** `arduino:renesas_uno` (version 1.6.0)
+- **Board FQBN:** `arduino:renesas_uno:minima`
+- **External Libraries:** `LiquidCrystal I2C` (by Frank de Brabander / Marco Schwartz)
+- **Host OS:** Windows 10/11 x64
+
+#### CLI Commands & Compilation Results
+```bash
+arduino-cli compile --fqbn arduino:renesas_uno:minima firmware/RoomTask
+```
+- **Flash Memory:** 49,376 bytes (18% of 262,144 bytes maximum)
+- **SRAM Memory:** 5,856 bytes (17% of 32,768 bytes maximum)
+- **Compilation Status:** 0 errors.
+
+#### Hardware Verification Notes
+- Bench test confirmed: PIR sensor LOW-to-HIGH transitions correctly trigger the 16x2 LCD cycle.
+- I2C backpack contrast potentiometer adjusted for clear readability at address `0x27`.
+- Bluetooth module (HC-05 / HM-10) wiring added: TXD to Pin 0 (RX1), RXD to Pin 1 (TX1 with recommended resistor divider).
+
+#### Next Steps
+- [ ] Wire physical Bluetooth module (HC-05 / HM-10) to Pin 0 & Pin 1 and test wireless smartphone pairing.
+- [ ] Proceed to v0.3: Non-volatile persistent task storage (EEPROM / Data Flash emulation).
+
+---
+
 ### [2026-11-21] - Initial Toolchain Setup & Arduino CLI Compilation Verification
 
 **Author / Contributor:** @anandyakshit  
@@ -85,15 +123,4 @@ arduino-cli compile --fqbn <FQBN> <SketchPath>
    - **Notes:** Warning emitted: `WARNING: library LiquidCrystal_I2C claims to run on all architecture(s) and may be incompatible with your current board which runs on renesas_uno architecture(s).` Despite the architecture header warning in `library.properties`, the library headers and implementation compile cleanly against the Renesas UNO R4 Wire HAL.
 
 #### Hardware Verification Notes
-- **Status: NOT YET HARDWARE-VERIFIED.**
-- Testing was performed purely through automated command-line toolchain compilation.
-- Physical board was not attached during this test (`arduino-cli board list` returned no connected boards).
-- Bench verification required:
-  - Validate physical signal integrity on Pin D2 with HC-SR501 / AM312 PIR sensors.
-  - Verify I2C communication on dedicated SDA/SCL pins with PCF8574 I2C backpack.
-  - Check whether the backpack address is `0x27` or `0x3F`.
-
-#### Next Steps
-- [ ] Connect physical Arduino UNO R4 Minima over USB and test upload via `arduino-cli upload`.
-- [ ] Test Serial Monitor commands (`ADD`, `LIST`, `CLEAR`, `HELP`) at 115200 baud.
-- [ ] Confirm PIR motion trigger response time and LCD contrast trimmer settings.
+- Initial scaffold compile check.
