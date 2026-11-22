@@ -48,12 +48,12 @@ arduino-cli compile --fqbn <FQBN> <SketchPath>
 
 **Author / Contributor:** @anandyakshit  
 **Version / Milestone:** v0.2 Dual Serial & Bluetooth  
-**Hardware Status:** Fully Bench-Tested & Verified on Physical Hardware (Core System) / v0.2 Firmware Compile-Verified
+**Hardware Status:** Fully Bench-Tested & Hardware-Verified (End-to-End Core, LCD, PIR, USB, & Bluetooth)
 
 #### Summary
 - **Physical Hardware Verification PASSED:** Physical Arduino UNO R4 Minima was connected on COM6, programmed via DFU, and verified on live test bench. PIR motion triggering (Pin D2), 16×2 I²C LCD (SDA/SCL at `0x27`), and command line parser (`ADD`, `LIST`, `CLEAR`, `HELP`) were confirmed functional on hardware.
 - **Added Bluetooth UART Support:** Updated `RoomTask.ino` to listen concurrently on hardware `Serial1` (Pins 0 RX, 1 TX at 9600 baud) and USB `Serial` (115200 baud).
-- **Dual-Stream Broadcast:** Feedback messages and command responses are mirrored across both USB and Bluetooth streams so mobile app users receive identical feedback to USB users.
+- **Dual-Stream Broadcast & Loopback Validated:** Tested live concurrent communication. Commands sent over USB Serial (`ADD USB Serial Test`) were executed in real time, logged on the 16x2 LCD, and mirrored instantly to the smartphone Bluetooth terminal app.
 - Updated documentation across `README.md`, `hardware/README.md`, `docs/ARCHITECTURE.md`, and `docs/SERIAL_COMMANDS.md`.
 
 #### Toolchain & Environment
@@ -77,7 +77,7 @@ arduino-cli compile --fqbn arduino:renesas_uno:minima firmware/RoomTask
 - Bluetooth module (HC-05 / HM-10) wiring added: TXD to Pin 0 (RX1), RXD to Pin 1 (TX1 with recommended resistor divider).
 
 #### Next Steps
-- [ ] Wire physical Bluetooth module (HC-05 / HM-10) to Pin 0 & Pin 1 and test wireless smartphone pairing.
+- [x] Wire physical Bluetooth module (HC-05 / HM-10) to Pin 0 & Pin 1 and test wireless smartphone pairing. (PASSED)
 - [ ] Proceed to v0.3: Non-volatile persistent task storage (EEPROM / Data Flash emulation).
 
 ---
