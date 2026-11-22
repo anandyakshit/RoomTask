@@ -44,6 +44,44 @@ arduino-cli compile --fqbn <FQBN> <SketchPath>
 
 ## Log Entries
 
+### [2026-11-22] - v0.4 Release: Smart 2-Line Reminder Display & Dual USB/Bluetooth Connect Detection
+
+**Author / Contributor:** @anandyakshit  
+**Version / Milestone:** v0.4 Smart Display & Web Serial Handshake  
+**Hardware Status:** Fully Bench-Tested & Verified on Physical Hardware (End-to-End System)
+
+#### Summary
+- **Smart 2-Line LCD Reminder Layout:**
+  - Solved 16×2 character limitation by cleanly partitioning reminder text into two dedicated lines:
+    - **Line 1 (`x/y TIME`):** Displays task counter (`x/y`) along with the parsed scheduled time (e.g. `1/4 09:00` or `1/4 4:30 PM`).
+    - **Line 2 (`reminder name`):** Dedicates all 16 LCD characters solely to the reminder description, preventing truncation.
+  - Implemented embedded C++ `parseReminder()` to extract time formats (`HH:MM`, `H:MM AM/PM`, `TIME: Name`, `Name at TIME`, etc.) from incoming task strings.
+- **Dual Web Serial & Bluetooth Connect/Disconnect Logic:**
+  - Added firmware command support for `CONNECT` and `DISCONNECT` handshakes sent over USB CDC.
+  - Unified `isDeviceConnected()` combining Bluetooth hardware STATE pin/traffic and active USB Web Serial session (`bool(Serial)` DTR tracking).
+  - Dynamic LCD idle screen updates: screen immediately switches between `RoomTask \n Connected` and `RoomTask \n Disconnected` when connecting/disconnecting via Web Serial or Bluetooth.
+- **Web Companion Dashboard Enhancements:**
+  - Integrated dynamic baud rate selector (115200 for direct USB COM, 9600 for Bluetooth COM).
+  - Synchronized LCD simulation mirroring the Arduino's new 2-line layout in real time.
+  - Added 60ms graceful flush delay upon Web Serial disconnect before shutting down streams.
+
+#### Toolchain & Environment
+- **Core / Toolchain:** `arduino:renesas_uno` (1.6.0)
+- **Board FQBN:** `arduino:renesas_uno:minima`
+- **Libraries Used:** `LiquidCrystal_I2C` (1.1.2)
+- **Host OS:** Windows 11 (x64)
+
+#### CLI Commands & Compilation
+```bash
+arduino-cli compile --fqbn arduino:renesas_uno:minima E:\RoomTask\firmware\RoomTask
+arduino-cli upload -p COM6 --fqbn arduino:renesas_uno:minima E:\RoomTask\firmware\RoomTask
+```
+- **Flash Memory:** `60060 bytes (22%)`
+- **SRAM Memory:** `5888 bytes (17%)`
+- **Compiler Warnings / Notes:** Clean build; DFU upload completed successfully to `COM6`.
+
+---
+
 ### [2026-11-22] - v0.3 Release: 60s Warm-Up State Machine, Web Dashboard & Calendar Sync
 
 **Author / Contributor:** @anandyakshit  

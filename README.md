@@ -1,6 +1,6 @@
 # RoomTask: Smart Motion-Activated Arduino Task Reminder
 
-> **Difficulty:** Beginner &bull; **Time:** ~45 Minutes &bull; **Target Board:** Arduino UNO R4 Minima &bull; **Status:** v0.3 (Fully Hardware Bench-Verified &bull; Dual USB & Bluetooth &bull; Web App & Calendar Sync)
+> **Difficulty:** Beginner &bull; **Time:** ~45 Minutes &bull; **Target Board:** Arduino UNO R4 Minima &bull; **Status:** v0.4 (Fully Hardware Bench-Verified &bull; Dual USB & Bluetooth &bull; Web App & Calendar Sync)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Arduino CLI](https://img.shields.io/badge/Arduino%20CLI-renesas__uno-00979C.svg)](https://github.com/arduino/arduino-cli)
@@ -23,7 +23,7 @@ Reminders can be managed wirelessly from your **smartphone over Bluetooth**, via
     |                        |                 |                              |
     |                        v                 v                              |
     |                [ 16x2 I2C LCD ]   [ Tri-Way Ingestion ]                 |
-    |                "Reminder 1/3"      - Web Dashboard (.ICS Calendar Sync) |
+    |                "1/3 09:00"         - Web Dashboard (.ICS Calendar Sync) |
     |                "Water plants"      - Bluetooth (Smartphone App)         |
     |                                    - USB CDC (Computer Terminal)        |
     +-------------------------------------------------------------------------+

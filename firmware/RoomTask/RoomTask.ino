@@ -8,15 +8,22 @@
     - 16x2 I2C LCD (SDA / SCL)
     - Passive Buzzer / Audio Chime (Pin D3, optional)
   Communication: 
-    - USB Serial (115200 baud)
-    - Bluetooth UART / Serial1 (Pins 0 RX, 1 TX at 9600 baud)
-  Commands: ADD <text>, LIST, CLEAR, HELP
+    - USB Serial (115200 baud) - Web Serial / CDC
+    - Bluetooth UART / Serial1 (Pins 0 RX, 1 TX at 9600 baud) - HC-05 / HM-10
+  Commands:
+    - ADD <text>      : add a reminder (e.g. "ADD 09:00: Daily Standup" or "ADD 4:30 PM: Team Standup")
+    - LIST            : list saved reminders
+    - CLEAR           : remove all reminders
+    - CONNECT         : signal companion active (Web Serial / Bluetooth)
+    - DISCONNECT      : signal companion disconnected
+    - HELP            : show available commands
 
   Reminders are stored in RAM and are cleared on reset/power loss.
 */
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <ctype.h>
 
 const byte PIR_PIN = 2;                 // Digital pin for PIR motion sensor
 const byte BUZZER_PIN = 3;              // Optional: connect a passive buzzer on Pin D3
@@ -52,26 +59,25 @@ unsigned long bootTime = 0;
 bool warmupActive = true;
 int lastRemainingSec = -1;
 
-bool lastBtConnectedState = false;
+// Connection tracking
+bool lastConnectedState = false;
 bool btSerialConnected = false;
 unsigned long lastBtTrafficMs = 0;
+bool usbConnected = false;
+unsigned long lastUsbTrafficMs = 0;
 
 String usbBuffer;
 String btBuffer;
 
-// Bluetooth connection logic:
-// 1. Hardware detection via STATE pin on Pin D4 (digital HIGH) or Pin A0 (analog > 2V)
-// 2. Active serial traffic detection on Serial1 (within last 15 seconds)
-bool isBluetoothConnected() {
-  if (digitalRead(BT_STATE_PIN) == HIGH) {
-    return true;
-  }
-  if (analogRead(A0) > 400) {
-    return true;
-  }
-  if (btSerialConnected && (millis() - lastBtTrafficMs < 15000)) {
-    return true;
-  }
+// Connection detection logic:
+// 1. Bluetooth hardware detection via STATE pin (Pin D4 digital HIGH) or Pin A0 (analog > 400 / ~2V)
+// 2. Bluetooth active serial traffic / handshake (within last 15 seconds)
+// 3. USB Web Serial connection (handshake received AND USB port open)
+bool isDeviceConnected() {
+  if (digitalRead(BT_STATE_PIN) == HIGH) return true;
+  if (analogRead(A0) > 400) return true;
+  if (btSerialConnected && (millis() - lastBtTrafficMs < 15000)) return true;
+  if (usbConnected && bool(Serial)) return true;
   return false;
 }
 
@@ -116,21 +122,105 @@ void playChime() {
 
 void printHelp() {
   broadcastPrintln(F("RoomTask commands (USB 115200 / BT 9600):"));
-  broadcastPrintln(F("  ADD <text> - add a reminder"));
-  broadcastPrintln(F("  LIST       - list saved reminders"));
-  broadcastPrintln(F("  CLEAR      - remove all reminders"));
-  broadcastPrintln(F("  HELP       - show this help"));
+  broadcastPrintln(F("  ADD <text>   - add a reminder (e.g. ADD 10:00 AM: Meeting)"));
+  broadcastPrintln(F("  LIST         - list saved reminders"));
+  broadcastPrintln(F("  CLEAR        - remove all reminders"));
+  broadcastPrintln(F("  CONNECT      - companion connection handshake"));
+  broadcastPrintln(F("  DISCONNECT   - companion disconnect handshake"));
+  broadcastPrintln(F("  HELP         - show this help"));
 }
 
 void showIdleScreen() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print(F("RoomTask"));
+  lcd.print(F("RoomTask        "));
   lcd.setCursor(0, 1);
-  if (isBluetoothConnected()) {
-    lcd.print(F("Connected"));
+  if (isDeviceConnected()) {
+    lcd.print(F("Connected       "));
   } else {
-    lcd.print(F("Disconnected"));
+    lcd.print(F("Disconnected    "));
+  }
+}
+
+// Parses a raw reminder string into TIME (row 0) and REMINDER NAME (row 1)
+void parseReminder(const char *raw, String &outTime, String &outName) {
+  outTime = "";
+  outName = "";
+  if (!raw || strlen(raw) == 0) return;
+
+  String str = raw;
+  str.trim();
+  int len = str.length();
+
+  // Pattern 1: Check if starts with a time format, e.g. "H:MM", "HH:MM", "4:30 PM", "09:00"
+  int colonPos = -1;
+  int searchLimit = (len < 6) ? len : 6;
+  for (int i = 0; i < searchLimit; i++) {
+    if (str[i] == ':') {
+      colonPos = i;
+      break;
+    }
+  }
+
+  bool isTimeAtStart = false;
+  int timeEndIdx = -1;
+
+  if (colonPos == 1 || colonPos == 2) {
+    // Verify preceding characters are digits
+    bool preDigits = isDigit(str[0]) && (colonPos == 1 || isDigit(str[1]));
+    // Verify next 2 characters are digits (minutes)
+    if (preDigits && (colonPos + 2 < len) && isDigit(str[colonPos + 1]) && isDigit(str[colonPos + 2])) {
+      isTimeAtStart = true;
+      timeEndIdx = colonPos + 3; // position after minutes
+
+      // Check for optional "AM", "PM", "am", "pm"
+      int p = timeEndIdx;
+      while (p < len && str[p] == ' ') p++;
+      if (p + 1 < len) {
+        char c1 = toupper((unsigned char)str[p]);
+        char c2 = toupper((unsigned char)str[p + 1]);
+        if ((c1 == 'A' || c1 == 'P') && c2 == 'M') {
+          timeEndIdx = p + 2;
+        }
+      }
+    }
+  }
+
+  if (isTimeAtStart) {
+    outTime = str.substring(0, timeEndIdx);
+    outTime.trim();
+
+    // Remainder is the reminder name
+    String remainder = str.substring(timeEndIdx);
+    remainder.trim();
+    while (remainder.length() > 0 && (remainder[0] == ':' || remainder[0] == '-' || remainder[0] == ' ')) {
+      remainder = remainder.substring(1);
+      remainder.trim();
+    }
+    outName = remainder;
+  } else {
+    // Pattern 2: Check for " at " or " @ " followed by time: e.g. "Team Standup at 10:00"
+    int atPos = str.indexOf(" @ ");
+    if (atPos == -1) atPos = str.indexOf(" at ");
+    if (atPos == -1) atPos = str.indexOf(" AT ");
+
+    if (atPos != -1) {
+      String potentialTime = str.substring(atPos + 3);
+      potentialTime.trim();
+      if (potentialTime.length() >= 4 && potentialTime.indexOf(':') != -1) {
+        outTime = potentialTime;
+        outName = str.substring(0, atPos);
+        outName.trim();
+      }
+    }
+
+    if (outTime.length() == 0) {
+      outName = str;
+    }
+  }
+
+  if (outName.length() == 0) {
+    outName = str;
   }
 }
 
@@ -140,16 +230,35 @@ void showCurrentTask() {
     return;
   }
 
+  String timeStr, nameStr;
+  parseReminder(tasks[displayedTask], timeStr, nameStr);
+
+  // Line 0: "x/y TIME" (or "x/y" if no time present)
+  char rawLine0[32];
+  if (timeStr.length() > 0) {
+    snprintf(rawLine0, sizeof(rawLine0), "%d/%d %s", displayedTask + 1, taskCount, timeStr.c_str());
+  } else {
+    snprintf(rawLine0, sizeof(rawLine0), "%d/%d", displayedTask + 1, taskCount);
+  }
+
+  // Exactly 16 characters for LCD row 0
+  char line0[17];
+  snprintf(line0, sizeof(line0), "%-16.16s", rawLine0);
+
+  // Exactly 16 characters for LCD row 1 (reminder name)
+  char line1[17];
+  snprintf(line1, sizeof(line1), "%-16.16s", nameStr.c_str());
+
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print(F("Reminder "));
-  lcd.print(displayedTask + 1);
-  lcd.print('/');
-  lcd.print(taskCount);
-
+  lcd.print(line0);
   lcd.setCursor(0, 1);
-  // LCD displays the first 16 characters; longer tasks are stored in full
-  lcd.print(tasks[displayedTask]);
+  lcd.print(line1);
+
+  broadcastPrint(F("Displaying: "));
+  broadcastPrint(line0);
+  broadcastPrint(F(" | "));
+  broadcastPrintln(line1);
 }
 
 void addTask(const String &taskText) {
@@ -191,19 +300,43 @@ void handleCommand(String command, bool fromBt) {
   command.trim();
   if (command.length() == 0) return;
 
+  // Track traffic source
   if (fromBt) {
     btSerialConnected = true;
     lastBtTrafficMs = millis();
-    if (!lastBtConnectedState) {
-      lastBtConnectedState = true;
-      if (!warmupActive && !showingTasks) showIdleScreen();
-    }
+  } else {
+    usbConnected = true;
+    lastUsbTrafficMs = millis();
   }
 
   String upper = command;
   upper.toUpperCase();
 
-  if (upper == "HELP") {
+  if (upper == "CONNECT") {
+    if (fromBt) {
+      btSerialConnected = true;
+      lastBtTrafficMs = millis();
+    } else {
+      usbConnected = true;
+      lastUsbTrafficMs = millis();
+    }
+    broadcastPrintln(F("OK: Connected"));
+    if (!warmupActive && !showingTasks) {
+      showIdleScreen();
+    }
+  } else if (upper == "DISCONNECT") {
+    if (fromBt) {
+      btSerialConnected = false;
+      lastBtTrafficMs = 0;
+    } else {
+      usbConnected = false;
+      lastUsbTrafficMs = 0;
+    }
+    broadcastPrintln(F("OK: Disconnected"));
+    if (!warmupActive && !showingTasks) {
+      showIdleScreen();
+    }
+  } else if (upper == "HELP") {
     printHelp();
   } else if (upper == "LIST") {
     listTasks();
@@ -308,6 +441,25 @@ void loop() {
   // Always listen for commands (USB & Bluetooth) without any delay() blocking
   readSerialCommands();
 
+  // If USB cable unplugged or port closed by OS, clear usbConnected
+  if (usbConnected && !bool(Serial)) {
+    usbConnected = false;
+  }
+
+  // Dynamic connection state detection
+  bool currentConn = isDeviceConnected();
+  if (currentConn != lastConnectedState) {
+    lastConnectedState = currentConn;
+    if (!showingTasks && !warmupActive) {
+      showIdleScreen();
+    }
+    if (currentConn) {
+      broadcastPrintln(F("Status: Connected"));
+    } else {
+      broadcastPrintln(F("Status: Disconnected"));
+    }
+  }
+
   // Non-blocking 60-second PIR warm-up countdown
   if (warmupActive) {
     unsigned long elapsed = millis() - bootTime;
@@ -331,20 +483,6 @@ void loop() {
       } else {
         showIdleScreen();
       }
-    }
-  }
-
-  // Instant connection state check
-  bool currentBt = isBluetoothConnected();
-  if (currentBt != lastBtConnectedState) {
-    lastBtConnectedState = currentBt;
-    if (!showingTasks) {
-      showIdleScreen();
-    }
-    if (currentBt) {
-      broadcastPrintln(F("Bluetooth: Connected"));
-    } else {
-      broadcastPrintln(F("Bluetooth: Disconnected"));
     }
   }
 

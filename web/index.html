@@ -252,13 +252,17 @@
       </div>
     </div>
 
-    <div class="btn-group">
+    <div class="btn-group" style="align-items: center;">
       <button id="btnWebBle" title="Connect using Bluetooth Low Energy (HM-10, BLE modules)">
         📶 Connect Web Bluetooth
       </button>
       <button id="btnWebSerial" class="secondary" title="Connect over USB cable or paired Bluetooth COM port (HC-05)">
-        🔌 Connect Web Serial (USB / HC-05)
+        🔌 Connect Web Serial
       </button>
+      <select id="baudRateSelect" style="background: #1e293b; color: #f8fafc; border: 1px solid #475569; padding: 0.55rem 0.75rem; border-radius: 8px; font-size: 0.85rem; font-weight: 500; cursor: pointer;" title="Select Baud Rate">
+        <option value="115200" selected>115200 baud (USB COM)</option>
+        <option value="9600">9600 baud (Bluetooth COM)</option>
+      </select>
       <button id="btnDisconnect" class="danger" style="display: none;">
         Disconnect
       </button>
@@ -271,8 +275,11 @@
   <!-- 2. QUICK TASK CREATOR -->
   <div class="card">
     <h2>✍️ Quick Add Reminder</h2>
-    <input type="text" id="taskInput" maxlength="40" placeholder="e.g., 4:30 PM: Team Standup" />
+    <input type="text" id="taskInput" maxlength="40" placeholder="e.g., 09:00: Standup or 4:30 PM: Team Meeting" />
     <div class="char-count"><span id="charCount">0</span>/40 chars</div>
+    <div class="help-text" style="margin-top: -0.25rem; margin-bottom: 0.75rem;">
+      💡 Tip: Include a time (e.g. <code>10:00 AM Meeting</code>) — Line 1 will display <b>1/x TIME</b> and Line 2 will display the <b>Reminder Name</b>.
+    </div>
 
     <div class="btn-group">
       <button id="btnAdd">➕ Add Reminder</button>
@@ -374,6 +381,8 @@
       }
     }
 
+    const baudRateSelect = document.getElementById('baudRateSelect');
+
     function setConnected(connected, typeName = 'Connected') {
       isConnected = connected;
       if (connected) {
@@ -382,6 +391,7 @@
         btnDisconnect.style.display = 'inline-block';
         btnWebBle.style.display = 'none';
         btnWebSerial.style.display = 'none';
+        if (baudRateSelect) baudRateSelect.style.display = 'none';
         updateLcd('RoomTask', 'Connected');
         // Send handshake
         sendRaw('CONNECT\n');
@@ -391,6 +401,7 @@
         btnDisconnect.style.display = 'none';
         btnWebBle.style.display = 'inline-block';
         btnWebSerial.style.display = 'inline-block';
+        if (baudRateSelect) baudRateSelect.style.display = 'inline-block';
         updateLcd('RoomTask', 'Disconnected');
       }
     }
@@ -407,7 +418,7 @@
       try {
         serialPort = await navigator.serial.requestPort();
         // Standard baud: 115200 for USB, 9600 for Bluetooth COM
-        let baud = 115200;
+        const baud = parseInt(baudRateSelect ? baudRateSelect.value : '115200', 10);
         await serialPort.open({ baudRate: baud });
 
         const textEncoder = new TextEncoderStream();
@@ -507,6 +518,7 @@
       try {
         if (isConnected) {
           await sendRaw('DISCONNECT\n');
+          await new Promise(r => setTimeout(r, 60));
         }
         if (serialWriter) await serialWriter.close();
         if (serialPort) await serialPort.close();
@@ -534,13 +546,34 @@
       }
     }
 
+    function parseTaskForDisplay(taskStr) {
+      taskStr = taskStr.trim();
+      let time = '';
+      let name = taskStr;
+      
+      const timeMatch = taskStr.match(/^(\d{1,2}:\d{2}(?:\s*[AaPp][Mm])?)(?:\s*[:\-]\s*|\s+)(.*)$/);
+      if (timeMatch) {
+        time = timeMatch[1].trim();
+        name = timeMatch[2].trim();
+      } else {
+        const atMatch = taskStr.match(/^(.*?)\s+(?:at|@)\s+(\d{1,2}:\d{2}(?:\s*[AaPp][Mm])?)$/i);
+        if (atMatch) {
+          name = atMatch[1].trim();
+          time = atMatch[2].trim();
+        }
+      }
+      return { time, name };
+    }
+
     function handleSimulatedCommand(cmd) {
       log(`[Preview Mode] Processed: ${cmd}`, 'rx');
       if (cmd.startsWith('ADD ')) {
-        const task = cmd.substring(4);
-        updateLcd('RoomTask ready', task);
+        const task = cmd.substring(4).trim();
+        const parsed = parseTaskForDisplay(task);
+        const row0 = parsed.time ? `1/1 ${parsed.time}` : '1/1';
+        updateLcd(row0, parsed.name);
       } else if (cmd === 'CLEAR') {
-        updateLcd('RoomTask', 'Disconnected');
+        updateLcd('RoomTask', isConnected ? 'Connected' : 'Disconnected');
       } else if (cmd === 'CONNECT') {
         updateLcd('RoomTask', 'Connected');
       } else if (cmd === 'DISCONNECT') {
@@ -553,10 +586,22 @@
       if (!line) return;
       log(`RX: ${line}`, 'rx');
 
-      if (line.startsWith('Added: ')) {
-        updateLcd('RoomTask ready', line.substring(7));
+      if (line.startsWith('Displaying: ')) {
+        const raw = line.substring(12);
+        const parts = raw.split(' | ');
+        if (parts.length >= 2) {
+          updateLcd(parts[0].trim(), parts[1].trim());
+        }
+      } else if (line.startsWith('Added: ')) {
+        const parsed = parseTaskForDisplay(line.substring(7));
+        const row0 = parsed.time ? `Saved ${parsed.time}` : 'Reminder Saved';
+        updateLcd(row0, parsed.name);
       } else if (line.includes('All reminders cleared')) {
         updateLcd('RoomTask', isConnected ? 'Connected' : 'Disconnected');
+      } else if (line.includes('Connected')) {
+        updateLcd('RoomTask', 'Connected');
+      } else if (line.includes('Disconnected')) {
+        updateLcd('RoomTask', 'Disconnected');
       }
     }
 
