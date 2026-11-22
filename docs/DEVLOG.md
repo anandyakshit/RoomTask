@@ -44,6 +44,43 @@ arduino-cli compile --fqbn <FQBN> <SketchPath>
 
 ## Log Entries
 
+### [2026-11-22] - v0.3 Release: 60s Warm-Up State Machine, Web Dashboard & Calendar Sync
+
+**Author / Contributor:** @anandyakshit  
+**Version / Milestone:** v0.3 Web Dashboard & Warm-Up State Machine  
+**Hardware Status:** Fully Bench-Tested & Verified on Physical Hardware (End-to-End System)
+
+#### Summary
+- **Live Hardware Validation PASSED:** The user confirmed complete hardware functionality of the v0.3 build on the physical Arduino UNO R4 Minima bench setup.
+- **PIR 60-Second Stabilization State Machine:**
+  - Added a non-blocking 60-second initialization countdown (`RoomTask init \n XXs remain`) on boot to prevent PIR false triggers during sensor warm-up.
+  - Active task ingestion during warm-up: `ADD`, `LIST`, `CLEAR` commands over Bluetooth and USB Serial function with zero latency during the countdown.
+  - Smart completion: When the countdown reaches 0s, if reminders were added during boot, the screen immediately launches into the reminder cycle; otherwise, it settles on the clean idle display (`RoomTask \n Disconnected/Connected`).
+- **Clean Boot Screen:** Completely eliminated the temporary "No reminders" screen.
+- **Robust Bluetooth Connection Sensing:** Combined digital Pin D4 and analog Pin A0 voltage sensing (for 3.3V logic compatibility) with active serial traffic fallback.
+- **Web Companion Dashboard (`web/index.html`):** Built and released a standalone browser-based dashboard supporting Web Bluetooth (BLE), Web Serial (USB / HC-05 COM), live 16×2 LCD simulation, and `.ics` calendar sync (Google, Apple, Outlook).
+
+#### Toolchain & Environment
+- **Core Package:** `arduino:renesas_uno` (version 1.6.0)
+- **Board FQBN:** `arduino:renesas_uno:minima`
+- **External Libraries:** `LiquidCrystal I2C`
+- **Host OS:** Windows 10/11 x64
+
+#### CLI Commands & Compilation Results
+```bash
+arduino-cli compile --fqbn arduino:renesas_uno:minima firmware/RoomTask
+```
+- **Flash Memory:** 49,556 bytes (18% of 262,144 bytes maximum)
+- **SRAM Memory:** 5,860 bytes (17% of 32,768 bytes maximum)
+- **Compilation Status:** 0 errors.
+
+#### Next Steps
+- [x] Implement live 60s warm-up countdown with non-blocking serial task input. (PASSED)
+- [x] Build and test Web Companion Dashboard with .ICS calendar parsing. (PASSED)
+- [ ] Proceed to v0.4: Non-volatile persistent task storage (EEPROM / on-board Data Flash emulation).
+
+---
+
 ### [2026-11-22] - Physical Hardware Validation & v0.2 Bluetooth Integration
 
 **Author / Contributor:** @anandyakshit  
