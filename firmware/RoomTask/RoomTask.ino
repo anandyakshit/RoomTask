@@ -1,16 +1,18 @@
 /*
   RoomTask: Arduino Motion-Activated Task Reminder
   Board: Arduino UNO R4 Minima
-  Inputs: PIR motion sensor (Pin D2)
-  Output: 16x2 I2C LCD (SDA / SCL)
-  Optional: Passive Buzzer / Audio Chime (Pin D3)
+  Inputs: 
+    - PIR motion sensor (Pin D2)
+    - Bluetooth STATE detection (Pin D4, optional)
+  Output: 
+    - 16x2 I2C LCD (SDA / SCL)
+    - Passive Buzzer / Audio Chime (Pin D3, optional)
   Communication: 
     - USB Serial (115200 baud)
     - Bluetooth UART / Serial1 (Pins 0 RX, 1 TX at 9600 baud)
-  Commands: ADD <text>, LIST, CLEAR, HELP
+  Commands: ADD <text>, LIST, CLEAR, HELP, CONNECT, DISCONNECT
 
   Reminders are stored in RAM and are cleared on reset/power loss.
-  Check hardware/README.md before wiring.
 */
 
 #include <Wire.h>
@@ -19,6 +21,7 @@
 const byte PIR_PIN = 2;                 // Digital pin for PIR motion sensor
 const byte BUZZER_PIN = 3;              // Optional: connect a passive buzzer on Pin D3
 const bool ENABLE_BUZZER = false;       // Set to true to enable motion audio chime
+const byte BT_STATE_PIN = 4;            // Optional: Connect to HC-05/HM-10 "STATE" pin
 
 const byte LCD_ADDRESS = 0x27;          // Default I2C address (change to 0x3F if needed)
 const byte LCD_COLUMNS = 16;
@@ -44,8 +47,29 @@ unsigned long lastPageChange = 0;
 unsigned long cooldownStartedAt = 0;
 bool cooldownActive = false;
 
+bool softwareBtConnected = false;
+bool lastBtConnectedState = false;
+unsigned long lastBtPacketTime = 0;
+
 String usbBuffer;
 String btBuffer;
+
+// Check Bluetooth connection via hardware STATE pin or software handshake
+bool isBluetoothConnected() {
+  if (digitalRead(BT_STATE_PIN) == HIGH) {
+    return true;
+  }
+  if (softwareBtConnected) {
+    // Keep connection active if heartbeat or command was received within 60s
+    if (millis() - lastBtPacketTime < 60000) {
+      return true;
+    } else {
+      softwareBtConnected = false;
+      return false;
+    }
+  }
+  return false;
+}
 
 // Broadcast text to both USB Serial and Bluetooth UART
 void broadcastPrint(const __FlashStringHelper *ifsh) {
@@ -80,7 +104,7 @@ void broadcastPrintln(int val) {
 
 void playChime() {
   if (ENABLE_BUZZER) {
-    tone(BUZZER_PIN, 1047, 80); // C6 subtle chime
+    tone(BUZZER_PIN, 1047, 80); // C6 chime
     delay(100);
     tone(BUZZER_PIN, 1319, 120); // E6 chime
   }
@@ -88,19 +112,24 @@ void playChime() {
 
 void printHelp() {
   broadcastPrintln(F("RoomTask commands (USB 115200 / BT 9600):"));
-  broadcastPrintln(F("  ADD <text> - add a reminder"));
-  broadcastPrintln(F("  LIST       - list saved reminders"));
-  broadcastPrintln(F("  CLEAR      - remove all reminders"));
-  broadcastPrintln(F("  HELP       - show this help"));
+  broadcastPrintln(F("  ADD <text>   - add a reminder"));
+  broadcastPrintln(F("  LIST         - list saved reminders"));
+  broadcastPrintln(F("  CLEAR        - remove all reminders"));
+  broadcastPrintln(F("  CONNECT      - mark Bluetooth as connected"));
+  broadcastPrintln(F("  DISCONNECT   - mark Bluetooth as disconnected"));
+  broadcastPrintln(F("  HELP         - show this help"));
 }
 
 void showIdleScreen() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print(F("RoomTask ready"));
+  lcd.print(F("RoomTask"));
   lcd.setCursor(0, 1);
-  lcd.print(taskCount);
-  lcd.print(F(" reminder(s)"));
+  if (isBluetoothConnected()) {
+    lcd.print(F("Connected"));
+  } else {
+    lcd.print(F("Disconnected"));
+  }
 }
 
 void showCurrentTask() {
@@ -109,7 +138,7 @@ void showCurrentTask() {
     lcd.setCursor(0, 0);
     lcd.print(F("No reminders"));
     lcd.setCursor(0, 1);
-    lcd.print(F("ADD via BT / USB"));
+    lcd.print(F("Add via Web / BT"));
     return;
   }
 
@@ -141,7 +170,9 @@ void addTask(const String &taskText) {
 
   broadcastPrint(F("Added: "));
   broadcastPrintln(tasks[taskCount - 1]);
-  showIdleScreen();
+  if (!showingTasks) {
+    showIdleScreen();
+  }
 }
 
 void listTasks() {
@@ -158,9 +189,14 @@ void listTasks() {
   }
 }
 
-void handleCommand(String command) {
+void handleCommand(String command, bool fromBluetooth) {
   command.trim();
   if (command.length() == 0) return;
+
+  if (fromBluetooth) {
+    softwareBtConnected = true;
+    lastBtPacketTime = millis();
+  }
 
   String upper = command;
   upper.toUpperCase();
@@ -174,6 +210,15 @@ void handleCommand(String command) {
     showingTasks = false;
     broadcastPrintln(F("All reminders cleared."));
     showIdleScreen();
+  } else if (upper == "CONNECT" || upper == "BT:1") {
+    softwareBtConnected = true;
+    lastBtPacketTime = millis();
+    broadcastPrintln(F("Bluetooth: Connected"));
+    if (!showingTasks) showIdleScreen();
+  } else if (upper == "DISCONNECT" || upper == "BT:0") {
+    softwareBtConnected = false;
+    broadcastPrintln(F("Bluetooth: Disconnected"));
+    if (!showingTasks) showIdleScreen();
   } else if (upper.startsWith("ADD ")) {
     addTask(command.substring(4));
   } else {
@@ -182,13 +227,13 @@ void handleCommand(String command) {
 }
 
 // Read commands non-blockingly from an input stream
-void readStream(Stream &stream, String &buffer) {
+void readStream(Stream &stream, String &buffer, bool isBt) {
   while (stream.available() > 0) {
     char incoming = (char)stream.read();
 
     if (incoming == '\n' || incoming == '\r') {
       if (buffer.length() > 0) {
-        handleCommand(buffer);
+        handleCommand(buffer, isBt);
         buffer = "";
       }
     } else if (buffer.length() < 100) {
@@ -201,8 +246,8 @@ void readStream(Stream &stream, String &buffer) {
 }
 
 void readSerialCommands() {
-  readStream(Serial, usbBuffer);
-  readStream(Serial1, btBuffer);
+  readStream(Serial, usbBuffer, false);
+  readStream(Serial1, btBuffer, true);
 }
 
 void startReminderCycle() {
@@ -236,6 +281,8 @@ void updateReminderDisplay() {
 
 void setup() {
   pinMode(PIR_PIN, INPUT);
+  pinMode(BT_STATE_PIN, INPUT_PULLDOWN);
+
   if (ENABLE_BUZZER) {
     pinMode(BUZZER_PIN, OUTPUT);
   }
@@ -247,6 +294,8 @@ void setup() {
 
   lcd.init();
   lcd.backlight();
+  
+  lastBtConnectedState = isBluetoothConnected();
   showIdleScreen();
 
   broadcastPrintln(F("\nRoomTask ready. Dual Serial (USB 115200 & Bluetooth 9600) active."));
@@ -255,6 +304,20 @@ void setup() {
 
 void loop() {
   readSerialCommands();
+
+  // Dynamically update idle screen when Bluetooth connection status changes
+  bool currentBt = isBluetoothConnected();
+  if (currentBt != lastBtConnectedState) {
+    lastBtConnectedState = currentBt;
+    if (!showingTasks) {
+      showIdleScreen();
+    }
+    if (currentBt) {
+      broadcastPrintln(F("Bluetooth: Connected"));
+    } else {
+      broadcastPrintln(F("Bluetooth: Disconnected"));
+    }
+  }
 
   // Expire the cooldown without blocking Serial or LCD updates
   if (cooldownActive && millis() - cooldownStartedAt >= REMINDER_COOLDOWN_MS) {

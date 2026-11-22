@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoomTask Web Dashboard & Calendar Sync</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --lcd-bg: #034f84;
+      --lcd-text: #e0f2fe;
+      --lcd-glow: rgba(56, 189, 248, 0.4);
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 1rem;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+
+    .card h2 {
+      font-size: 1.15rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Simulated LCD Screen */
+    .lcd-frame {
+      background: #0b192c;
+      padding: 14px;
+      border-radius: 10px;
+      border: 3px solid #1e3a5f;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.8), 0 4px 12px rgba(0,0,0,0.4);
+      margin-bottom: 1rem;
+    }
+
+    .lcd-screen {
+      background: var(--lcd-bg);
+      color: var(--lcd-text);
+      font-family: "Courier New", Courier, monospace;
+      font-weight: bold;
+      font-size: 1.25rem;
+      padding: 12px 14px;
+      border-radius: 6px;
+      letter-spacing: 2px;
+      box-shadow: inset 0 0 12px var(--lcd-glow);
+      text-shadow: 0 0 8px var(--lcd-glow);
+      user-select: none;
+    }
+
+    .lcd-line {
+      white-space: pre;
+      overflow: hidden;
+      height: 1.4rem;
+    }
+
+    /* Buttons & Controls */
+    button {
+      background: var(--accent);
+      color: #041421;
+      font-weight: 600;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      font-size: 0.9rem;
+    }
+
+    button:hover { background: var(--accent-hover); color: white; }
+    button:active { transform: scale(0.98); }
+    button.secondary {
+      background: #334155;
+      color: var(--text);
+    }
+    button.secondary:hover { background: #475569; }
+    button.danger {
+      background: #b91c1c;
+      color: white;
+    }
+    button.danger:hover { background: #dc2626; }
+
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    /* Status Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .badge.connected { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+    .badge.disconnected { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+    .badge .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Form Inputs */
+    input[type="text"], textarea {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 0.65rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+      margin-bottom: 0.5rem;
+    }
+    input[type="text"]:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+
+    .char-count {
+      text-align: right;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: -0.25rem;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Calendar Event List */
+    .event-list {
+      list-style: none;
+      margin-top: 0.75rem;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .event-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.5rem;
+      background: #0f172a;
+      border-radius: 6px;
+      margin-bottom: 0.4rem;
+      font-size: 0.9rem;
+    }
+    .event-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+    .event-time {
+      font-weight: 600;
+      color: var(--accent);
+      min-width: 65px;
+    }
+    .event-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Console output */
+    .console-log {
+      background: #050b14;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #38bdf8;
+      height: 140px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .console-log .tx { color: #34d399; }
+    .console-log .rx { color: #93c5fd; }
+    .console-log .err { color: #f87171; }
+
+    .help-text {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>RoomTask Dashboard</h1>
+    <p>Wireless Bluetooth & Calendar Companion for Arduino UNO R4</p>
+  </header>
+
+  <!-- 1. LIVE LCD PREVIEW -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+      <h2>🖥️ Live 16×2 Display Preview</h2>
+      <div id="connBadge" class="badge disconnected">
+        <span class="dot"></span> <span id="connText">Disconnected</span>
+      </div>
+    </div>
+
+    <div class="lcd-frame">
+      <div class="lcd-screen">
+        <div class="lcd-line" id="lcdRow0">RoomTask        </div>
+        <div class="lcd-line" id="lcdRow1">Disconnected    </div>
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button id="btnWebBle" title="Connect using Bluetooth Low Energy (HM-10, BLE modules)">
+        📶 Connect Web Bluetooth
+      </button>
+      <button id="btnWebSerial" class="secondary" title="Connect over USB cable or paired Bluetooth COM port (HC-05)">
+        🔌 Connect Web Serial (USB / HC-05)
+      </button>
+      <button id="btnDisconnect" class="danger" style="display: none;">
+        Disconnect
+      </button>
+    </div>
+    <div class="help-text">
+      💡 Tip: Use <b>Web Bluetooth</b> for BLE (HM-10) or <b>Web Serial</b> for USB & paired HC-05 COM ports in Chrome/Edge.
+    </div>
+  </div>
+
+  <!-- 2. QUICK TASK CREATOR -->
+  <div class="card">
+    <h2>✍️ Quick Add Reminder</h2>
+    <input type="text" id="taskInput" maxlength="40" placeholder="e.g., 4:30 PM: Team Standup" />
+    <div class="char-count"><span id="charCount">0</span>/40 chars</div>
+
+    <div class="btn-group">
+      <button id="btnAdd">➕ Add Reminder</button>
+      <button id="btnList" class="secondary">📋 List Reminders</button>
+      <button id="btnClear" class="danger">🗑️ Clear All</button>
+    </div>
+  </div>
+
+  <!-- 3. CALENDAR SYNC WIDGET -->
+  <div class="card">
+    <h2>📅 Smart Calendar Sync</h2>
+    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+      Import your schedule for today from Google Calendar, Outlook, or Apple Calendar (.ics file).
+    </p>
+
+    <div class="btn-group" style="margin-bottom: 0.75rem;">
+      <label class="secondary" style="display: inline-block; cursor: pointer; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; background: #334155;">
+        📂 Upload .ICS Calendar File
+        <input type="file" id="icsFileInput" accept=".ics,text/calendar" style="display: none;" />
+      </label>
+      <button id="btnMockEvents" class="secondary">⚡ Load Demo Schedule</button>
+    </div>
+
+    <ul class="event-list" id="eventList">
+      <li style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem;">
+        No events loaded yet. Upload your calendar file or load the demo schedule.
+      </li>
+    </ul>
+
+    <div style="margin-top: 0.75rem;">
+      <button id="btnSyncCalendar" disabled>🚀 Push Selected Events to RoomTask</button>
+    </div>
+  </div>
+
+  <!-- 4. REAL-TIME CONSOLE -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+      <h2>💻 Device Console</h2>
+      <button id="btnClearLog" class="secondary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">Clear Log</button>
+    </div>
+    <div class="console-log" id="consoleLog"></div>
+  </div>
+
+  <script>
+    // State
+    let serialPort = null;
+    let serialWriter = null;
+    let serialReader = null;
+
+    let bleDevice = null;
+    let bleCharacteristic = null;
+
+    let isConnected = false;
+    let calendarEvents = [];
+
+    // DOM Elements
+    const connBadge = document.getElementById('connBadge');
+    const connText = document.getElementById('connText');
+    const btnWebBle = document.getElementById('btnWebBle');
+    const btnWebSerial = document.getElementById('btnWebSerial');
+    const btnDisconnect = document.getElementById('btnDisconnect');
+    const lcdRow0 = document.getElementById('lcdRow0');
+    const lcdRow1 = document.getElementById('lcdRow1');
+    const taskInput = document.getElementById('taskInput');
+    const charCount = document.getElementById('charCount');
+    const btnAdd = document.getElementById('btnAdd');
+    const btnList = document.getElementById('btnList');
+    const btnClear = document.getElementById('btnClear');
+    const icsFileInput = document.getElementById('icsFileInput');
+    const btnMockEvents = document.getElementById('btnMockEvents');
+    const eventList = document.getElementById('eventList');
+    const btnSyncCalendar = document.getElementById('btnSyncCalendar');
+    const consoleLog = document.getElementById('consoleLog');
+    const btnClearLog = document.getElementById('btnClearLog');
+
+    // Logging helper
+    function log(text, type = 'info') {
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = type;
+      div.textContent = `[${time}] ${text}`;
+      consoleLog.appendChild(div);
+      consoleLog.scrollTop = consoleLog.scrollHeight;
+    }
+
+    btnClearLog.addEventListener('click', () => { consoleLog.innerHTML = ''; });
+
+    taskInput.addEventListener('input', () => {
+      charCount.textContent = taskInput.value.length;
+    });
+
+    // LCD display helper (16 fixed chars)
+    function updateLcd(row0, row1) {
+      if (row0 !== undefined) {
+        lcdRow0.textContent = (row0 + '                ').substring(0, 16);
+      }
+      if (row1 !== undefined) {
+        lcdRow1.textContent = (row1 + '                ').substring(0, 16);
+      }
+    }
+
+    function setConnected(connected, typeName = 'Connected') {
+      isConnected = connected;
+      if (connected) {
+        connBadge.className = 'badge connected';
+        connText.textContent = `${typeName}`;
+        btnDisconnect.style.display = 'inline-block';
+        btnWebBle.style.display = 'none';
+        btnWebSerial.style.display = 'none';
+        updateLcd('RoomTask', 'Connected');
+        // Send handshake
+        sendRaw('CONNECT\n');
+      } else {
+        connBadge.className = 'badge disconnected';
+        connText.textContent = 'Disconnected';
+        btnDisconnect.style.display = 'none';
+        btnWebBle.style.display = 'inline-block';
+        btnWebSerial.style.display = 'inline-block';
+        updateLcd('RoomTask', 'Disconnected');
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // 1. WEB SERIAL CONNECTION (USB CDC or paired HC-05 COM port)
+    // ----------------------------------------------------------------------
+    btnWebSerial.addEventListener('click', async () => {
+      if (!('serial' in navigator)) {
+        alert('Web Serial is not supported in this browser. Please use Google Chrome or Edge.');
+        return;
+      }
+
+      try {
+        serialPort = await navigator.serial.requestPort();
+        // Standard baud: 115200 for USB, 9600 for Bluetooth COM
+        let baud = 115200;
+        await serialPort.open({ baudRate: baud });
+
+        const textEncoder = new TextEncoderStream();
+        const writableStreamClosed = textEncoder.readable.pipeTo(serialPort.writable);
+        serialWriter = textEncoder.writable.getWriter();
+
+        readSerialLoop();
+        setConnected(true, 'Serial Active');
+        log(`Connected to Serial at ${baud} baud`, 'tx');
+      } catch (err) {
+        log(`Serial Error: ${err.message}`, 'err');
+      }
+    });
+
+    async function readSerialLoop() {
+      const textDecoder = new TextDecoderStream();
+      const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
+      serialReader = textDecoder.readable.getReader();
+
+      let lineBuffer = '';
+      try {
+        while (true) {
+          const { value, done } = await serialReader.read();
+          if (done) break;
+          if (value) {
+            lineBuffer += value;
+            let lines = lineBuffer.split(/\r?\n/);
+            lineBuffer = lines.pop();
+            for (let line of lines) {
+              handleIncomingLine(line);
+            }
+          }
+        }
+      } catch (error) {
+        log(`Read error: ${error}`, 'err');
+      } finally {
+        setConnected(false);
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // 2. WEB BLUETOOTH CONNECTION (HM-10 & BLE UART Services)
+    // ----------------------------------------------------------------------
+    btnWebBle.addEventListener('click', async () => {
+      if (!('bluetooth' in navigator)) {
+        alert('Web Bluetooth is not supported in this browser. Please use Chrome on Android/Desktop or Bluefy on iOS.');
+        return;
+      }
+
+      try {
+        log('Requesting Bluetooth device...', 'info');
+        bleDevice = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [
+            '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / CC2541 service
+            '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART Service
+            '0000dfb0-0000-1000-8000-00805f9b34fb'  // Bluno service
+          ]
+        });
+
+        bleDevice.addEventListener('gattserverdisconnected', () => {
+          log('Bluetooth disconnected', 'err');
+          setConnected(false);
+        });
+
+        log(`Connecting to ${bleDevice.name || 'Device'}...`, 'info');
+        const server = await bleDevice.gatt.connect();
+
+        // Search for known UART services
+        const services = await server.getPrimaryServices();
+        let characteristicFound = null;
+
+        for (let service of services) {
+          const chars = await service.getCharacteristics();
+          for (let ch of chars) {
+            if (ch.properties.write || ch.properties.writeWithoutResponse) {
+              characteristicFound = ch;
+              break;
+            }
+          }
+          if (characteristicFound) break;
+        }
+
+        if (!characteristicFound) {
+          throw new Error('No writable UART characteristic found on device.');
+        }
+
+        bleCharacteristic = characteristicFound;
+        setConnected(true, bleDevice.name || 'Bluetooth');
+        log(`Bluetooth connected: ${bleDevice.name}`, 'tx');
+      } catch (err) {
+        log(`Bluetooth Error: ${err.message}`, 'err');
+      }
+    });
+
+    btnDisconnect.addEventListener('click', async () => {
+      try {
+        if (isConnected) {
+          await sendRaw('DISCONNECT\n');
+        }
+        if (serialWriter) await serialWriter.close();
+        if (serialPort) await serialPort.close();
+        if (bleDevice && bleDevice.gatt.connected) await bleDevice.gatt.disconnect();
+      } catch (e) {}
+      setConnected(false);
+      log('Disconnected by user', 'info');
+    });
+
+    // ----------------------------------------------------------------------
+    // 3. SENDING COMMANDS
+    // ----------------------------------------------------------------------
+    async function sendRaw(text) {
+      if (!text.endsWith('\n')) text += '\n';
+      log(`TX: ${text.trim()}`, 'tx');
+
+      if (serialWriter) {
+        await serialWriter.write(text);
+      } else if (bleCharacteristic) {
+        const encoder = new TextEncoder();
+        await bleCharacteristic.writeValue(encoder.encode(text));
+      } else {
+        // Offline preview mode: update LCD preview directly
+        handleSimulatedCommand(text.trim());
+      }
+    }
+
+    function handleSimulatedCommand(cmd) {
+      log(`[Preview Mode] Processed: ${cmd}`, 'rx');
+      if (cmd.startsWith('ADD ')) {
+        const task = cmd.substring(4);
+        updateLcd('RoomTask ready', task);
+      } else if (cmd === 'CLEAR') {
+        updateLcd('RoomTask', 'Disconnected');
+      } else if (cmd === 'CONNECT') {
+        updateLcd('RoomTask', 'Connected');
+      } else if (cmd === 'DISCONNECT') {
+        updateLcd('RoomTask', 'Disconnected');
+      }
+    }
+
+    function handleIncomingLine(line) {
+      line = line.trim();
+      if (!line) return;
+      log(`RX: ${line}`, 'rx');
+
+      if (line.startsWith('Added: ')) {
+        updateLcd('RoomTask ready', line.substring(7));
+      } else if (line.includes('All reminders cleared')) {
+        updateLcd('RoomTask', isConnected ? 'Connected' : 'Disconnected');
+      }
+    }
+
+    // Task Actions
+    btnAdd.addEventListener('click', async () => {
+      const task = taskInput.value.trim();
+      if (!task) return;
+      await sendRaw(`ADD ${task}\n`);
+      taskInput.value = '';
+      charCount.textContent = '0';
+    });
+
+    taskInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btnAdd.click();
+    });
+
+    btnList.addEventListener('click', () => sendRaw('LIST\n'));
+    btnClear.addEventListener('click', () => sendRaw('CLEAR\n'));
+
+    // ----------------------------------------------------------------------
+    // 4. CALENDAR SYNC (iCal .ics parser & demo schedule)
+    // ----------------------------------------------------------------------
+    function parseICS(icsText) {
+      const events = [];
+      const lines = icsText.split(/\r?\n/);
+      let inEvent = false;
+      let summary = '';
+      let dtstart = '';
+
+      for (let line of lines) {
+        if (line.startsWith('BEGIN:VEVENT')) {
+          inEvent = true;
+          summary = '';
+          dtstart = '';
+        } else if (line.startsWith('END:VEVENT')) {
+          if (summary) {
+            let timeStr = formatIcsTime(dtstart);
+            events.push({ title: summary, time: timeStr });
+          }
+          inEvent = false;
+        } else if (inEvent) {
+          if (line.startsWith('SUMMARY:')) {
+            summary = line.substring(8).trim();
+          } else if (line.startsWith('DTSTART')) {
+            const parts = line.split(':');
+            if (parts.length > 1) dtstart = parts[1].trim();
+          }
+        }
+      }
+      return events;
+    }
+
+    function formatIcsTime(raw) {
+      if (!raw || raw.length < 13) return 'Today';
+      try {
+        const timePart = raw.split('T')[1];
+        if (!timePart) return 'Today';
+        const hours = timePart.substring(0, 2);
+        const mins = timePart.substring(2, 4);
+        return `${hours}:${mins}`;
+      } catch (e) {
+        return 'Today';
+      }
+    }
+
+    function renderEvents(events) {
+      calendarEvents = events;
+      eventList.innerHTML = '';
+
+      if (events.length === 0) {
+        eventList.innerHTML = '<li style="color: var(--text-muted); padding: 0.5rem;">No events found in file.</li>';
+        btnSyncCalendar.disabled = true;
+        return;
+      }
+
+      events.forEach((ev, idx) => {
+        const li = document.createElement('li');
+        li.className = 'event-item';
+        li.innerHTML = `
+          <input type="checkbox" id="ev_${idx}" checked />
+          <span class="event-time">${ev.time}</span>
+          <span class="event-title">${ev.title}</span>
+        `;
+        eventList.appendChild(li);
+      });
+
+      btnSyncCalendar.disabled = false;
+      log(`Loaded ${events.length} calendar events`, 'info');
+    }
+
+    icsFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const parsed = parseICS(event.target.result);
+        renderEvents(parsed);
+      };
+      reader.readAsText(file);
+    });
+
+    btnMockEvents.addEventListener('click', () => {
+      const sampleEvents = [
+        { time: '09:00', title: 'Daily Standup' },
+        { time: '12:30', title: 'Lunch & Walk' },
+        { time: '15:00', title: 'Review PR & Code' },
+        { time: '18:00', title: 'Workout / Gym' }
+      ];
+      renderEvents(sampleEvents);
+    });
+
+    btnSyncCalendar.addEventListener('click', async () => {
+      const selected = [];
+      calendarEvents.forEach((ev, idx) => {
+        const chk = document.getElementById(`ev_${idx}`);
+        if (chk && chk.checked) {
+          selected.push(`${ev.time}: ${ev.title}`.substring(0, 40));
+        }
+      });
+
+      if (selected.length === 0) {
+        alert('Select at least one event to sync.');
+        return;
+      }
+
+      log(`Syncing ${selected.length} events to RoomTask...`, 'info');
+      await sendRaw('CLEAR\n');
+      for (let item of selected) {
+        await new Promise(r => setTimeout(r, 250)); // stagger sends
+        await sendRaw(`ADD ${item}\n`);
+      }
+      log('Calendar sync complete!', 'tx');
+    });
+
+    // Initial simulated LCD display
+    updateLcd('RoomTask', 'Disconnected');
+  </script>
+</body>
+</html>
