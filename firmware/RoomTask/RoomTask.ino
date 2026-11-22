@@ -3,14 +3,14 @@
   Board: Arduino UNO R4 Minima
   Inputs: 
     - PIR motion sensor (Pin D2)
-    - Bluetooth STATE detection (Pin D4, optional)
+    - Bluetooth STATE pin (Pin D4)
   Output: 
     - 16x2 I2C LCD (SDA / SCL)
     - Passive Buzzer / Audio Chime (Pin D3, optional)
   Communication: 
     - USB Serial (115200 baud)
     - Bluetooth UART / Serial1 (Pins 0 RX, 1 TX at 9600 baud)
-  Commands: ADD <text>, LIST, CLEAR, HELP, CONNECT, DISCONNECT
+  Commands: ADD <text>, LIST, CLEAR, HELP
 
   Reminders are stored in RAM and are cleared on reset/power loss.
 */
@@ -21,7 +21,7 @@
 const byte PIR_PIN = 2;                 // Digital pin for PIR motion sensor
 const byte BUZZER_PIN = 3;              // Optional: connect a passive buzzer on Pin D3
 const bool ENABLE_BUZZER = false;       // Set to true to enable motion audio chime
-const byte BT_STATE_PIN = 4;            // Optional: Connect to HC-05/HM-10 "STATE" pin
+const byte BT_STATE_PIN = 4;            // Connect to HC-05/HM-10 "STATE" pin
 
 const byte LCD_ADDRESS = 0x27;          // Default I2C address (change to 0x3F if needed)
 const byte LCD_COLUMNS = 16;
@@ -47,28 +47,21 @@ unsigned long lastPageChange = 0;
 unsigned long cooldownStartedAt = 0;
 bool cooldownActive = false;
 
-bool softwareBtConnected = false;
 bool lastBtConnectedState = false;
-unsigned long lastBtPacketTime = 0;
+unsigned long lastStateLowTime = 0;
 
 String usbBuffer;
 String btBuffer;
 
-// Check Bluetooth connection via hardware STATE pin or software handshake
+// Hardware connection detection via the Bluetooth module's STATE pin
+// (Filters out any pulse blinking when unpaired, instantly detects disconnect)
 bool isBluetoothConnected() {
-  if (digitalRead(BT_STATE_PIN) == HIGH) {
-    return true;
+  if (digitalRead(BT_STATE_PIN) == LOW) {
+    lastStateLowTime = millis();
+    return false;
   }
-  if (softwareBtConnected) {
-    // Keep connection active if heartbeat or command was received within 60s
-    if (millis() - lastBtPacketTime < 60000) {
-      return true;
-    } else {
-      softwareBtConnected = false;
-      return false;
-    }
-  }
-  return false;
+  // Must be solid HIGH for at least 300ms to confirm connection
+  return (millis() - lastStateLowTime > 300);
 }
 
 // Broadcast text to both USB Serial and Bluetooth UART
@@ -112,12 +105,10 @@ void playChime() {
 
 void printHelp() {
   broadcastPrintln(F("RoomTask commands (USB 115200 / BT 9600):"));
-  broadcastPrintln(F("  ADD <text>   - add a reminder"));
-  broadcastPrintln(F("  LIST         - list saved reminders"));
-  broadcastPrintln(F("  CLEAR        - remove all reminders"));
-  broadcastPrintln(F("  CONNECT      - mark Bluetooth as connected"));
-  broadcastPrintln(F("  DISCONNECT   - mark Bluetooth as disconnected"));
-  broadcastPrintln(F("  HELP         - show this help"));
+  broadcastPrintln(F("  ADD <text> - add a reminder"));
+  broadcastPrintln(F("  LIST       - list saved reminders"));
+  broadcastPrintln(F("  CLEAR      - remove all reminders"));
+  broadcastPrintln(F("  HELP       - show this help"));
 }
 
 void showIdleScreen() {
@@ -189,14 +180,9 @@ void listTasks() {
   }
 }
 
-void handleCommand(String command, bool fromBluetooth) {
+void handleCommand(String command) {
   command.trim();
   if (command.length() == 0) return;
-
-  if (fromBluetooth) {
-    softwareBtConnected = true;
-    lastBtPacketTime = millis();
-  }
 
   String upper = command;
   upper.toUpperCase();
@@ -210,15 +196,6 @@ void handleCommand(String command, bool fromBluetooth) {
     showingTasks = false;
     broadcastPrintln(F("All reminders cleared."));
     showIdleScreen();
-  } else if (upper == "CONNECT" || upper == "BT:1") {
-    softwareBtConnected = true;
-    lastBtPacketTime = millis();
-    broadcastPrintln(F("Bluetooth: Connected"));
-    if (!showingTasks) showIdleScreen();
-  } else if (upper == "DISCONNECT" || upper == "BT:0") {
-    softwareBtConnected = false;
-    broadcastPrintln(F("Bluetooth: Disconnected"));
-    if (!showingTasks) showIdleScreen();
   } else if (upper.startsWith("ADD ")) {
     addTask(command.substring(4));
   } else {
@@ -227,13 +204,13 @@ void handleCommand(String command, bool fromBluetooth) {
 }
 
 // Read commands non-blockingly from an input stream
-void readStream(Stream &stream, String &buffer, bool isBt) {
+void readStream(Stream &stream, String &buffer) {
   while (stream.available() > 0) {
     char incoming = (char)stream.read();
 
     if (incoming == '\n' || incoming == '\r') {
       if (buffer.length() > 0) {
-        handleCommand(buffer, isBt);
+        handleCommand(buffer);
         buffer = "";
       }
     } else if (buffer.length() < 100) {
@@ -246,8 +223,8 @@ void readStream(Stream &stream, String &buffer, bool isBt) {
 }
 
 void readSerialCommands() {
-  readStream(Serial, usbBuffer, false);
-  readStream(Serial1, btBuffer, true);
+  readStream(Serial, usbBuffer);
+  readStream(Serial1, btBuffer);
 }
 
 void startReminderCycle() {
@@ -305,7 +282,7 @@ void setup() {
 void loop() {
   readSerialCommands();
 
-  // Dynamically update idle screen when Bluetooth connection status changes
+  // Instant hardware connection state check
   bool currentBt = isBluetoothConnected();
   if (currentBt != lastBtConnectedState) {
     lastBtConnectedState = currentBt;
