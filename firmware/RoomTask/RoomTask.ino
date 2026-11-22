@@ -3,7 +3,7 @@
   Board: Arduino UNO R4 Minima
   Inputs: 
     - PIR motion sensor (Pin D2)
-    - Bluetooth STATE pin (Pin D4)
+    - Bluetooth STATE detection (Pin D4 or Analog A0)
   Output: 
     - 16x2 I2C LCD (SDA / SCL)
     - Passive Buzzer / Audio Chime (Pin D3, optional)
@@ -21,7 +21,7 @@
 const byte PIR_PIN = 2;                 // Digital pin for PIR motion sensor
 const byte BUZZER_PIN = 3;              // Optional: connect a passive buzzer on Pin D3
 const bool ENABLE_BUZZER = false;       // Set to true to enable motion audio chime
-const byte BT_STATE_PIN = 4;            // Connect to HC-05/HM-10 "STATE" pin
+const byte BT_STATE_PIN = 4;            // Connect to HC-05/HM-10 "STATE" pin (or use A0)
 
 const byte LCD_ADDRESS = 0x27;          // Default I2C address (change to 0x3F if needed)
 const byte LCD_COLUMNS = 16;
@@ -48,20 +48,29 @@ unsigned long cooldownStartedAt = 0;
 bool cooldownActive = false;
 
 bool lastBtConnectedState = false;
-unsigned long lastStateLowTime = 0;
+bool btSerialConnected = false;
+unsigned long lastBtTrafficMs = 0;
 
 String usbBuffer;
 String btBuffer;
 
-// Hardware connection detection via the Bluetooth module's STATE pin
-// (Filters out any pulse blinking when unpaired, instantly detects disconnect)
+// Bluetooth connection logic:
+// 1. Hardware detection via STATE pin on Pin D4 (digital HIGH) or Pin A0 (analog > 2V)
+// 2. Active serial traffic detection on Serial1 (within last 15 seconds)
 bool isBluetoothConnected() {
-  if (digitalRead(BT_STATE_PIN) == LOW) {
-    lastStateLowTime = millis();
-    return false;
+  // Check Pin D4 (digital)
+  if (digitalRead(BT_STATE_PIN) == HIGH) {
+    return true;
   }
-  // Must be solid HIGH for at least 300ms to confirm connection
-  return (millis() - lastStateLowTime > 300);
+  // Check Pin A0 (analog threshold > 400 for 3.3V logic levels)
+  if (analogRead(A0) > 400) {
+    return true;
+  }
+  // Active Bluetooth communication fallback
+  if (btSerialConnected && (millis() - lastBtTrafficMs < 15000)) {
+    return true;
+  }
+  return false;
 }
 
 // Broadcast text to both USB Serial and Bluetooth UART
@@ -125,11 +134,7 @@ void showIdleScreen() {
 
 void showCurrentTask() {
   if (taskCount == 0) {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(F("No reminders"));
-    lcd.setCursor(0, 1);
-    lcd.print(F("Add via Web / BT"));
+    showIdleScreen();
     return;
   }
 
@@ -180,9 +185,18 @@ void listTasks() {
   }
 }
 
-void handleCommand(String command) {
+void handleCommand(String command, bool fromBt) {
   command.trim();
   if (command.length() == 0) return;
+
+  if (fromBt) {
+    btSerialConnected = true;
+    lastBtTrafficMs = millis();
+    if (!lastBtConnectedState) {
+      lastBtConnectedState = true;
+      if (!showingTasks) showIdleScreen();
+    }
+  }
 
   String upper = command;
   upper.toUpperCase();
@@ -204,13 +218,13 @@ void handleCommand(String command) {
 }
 
 // Read commands non-blockingly from an input stream
-void readStream(Stream &stream, String &buffer) {
+void readStream(Stream &stream, String &buffer, bool isBt) {
   while (stream.available() > 0) {
     char incoming = (char)stream.read();
 
     if (incoming == '\n' || incoming == '\r') {
       if (buffer.length() > 0) {
-        handleCommand(buffer);
+        handleCommand(buffer, isBt);
         buffer = "";
       }
     } else if (buffer.length() < 100) {
@@ -223,11 +237,12 @@ void readStream(Stream &stream, String &buffer) {
 }
 
 void readSerialCommands() {
-  readStream(Serial, usbBuffer);
-  readStream(Serial1, btBuffer);
+  readStream(Serial, usbBuffer, false);
+  readStream(Serial1, btBuffer, true);
 }
 
 void startReminderCycle() {
+  if (taskCount == 0) return; // Do not start cycle if there are no reminders
   showingTasks = true;
   displayedTask = 0;
   lastPageChange = millis();
@@ -258,7 +273,7 @@ void updateReminderDisplay() {
 
 void setup() {
   pinMode(PIR_PIN, INPUT);
-  pinMode(BT_STATE_PIN, INPUT_PULLDOWN);
+  pinMode(BT_STATE_PIN, INPUT); // High-impedance input for 3.3V STATE pin
 
   if (ENABLE_BUZZER) {
     pinMode(BUZZER_PIN, OUTPUT);
@@ -272,6 +287,9 @@ void setup() {
   lcd.init();
   lcd.backlight();
   
+  // Screen initializes with:
+  // Row 0: RoomTask
+  // Row 1: Disconnected (or Connected)
   lastBtConnectedState = isBluetoothConnected();
   showIdleScreen();
 
@@ -282,7 +300,7 @@ void setup() {
 void loop() {
   readSerialCommands();
 
-  // Instant hardware connection state check
+  // Instant connection state check
   bool currentBt = isBluetoothConnected();
   if (currentBt != lastBtConnectedState) {
     lastBtConnectedState = currentBt;
@@ -304,7 +322,9 @@ void loop() {
 
   bool pirState = digitalRead(PIR_PIN) == HIGH;
   if (pirState && !previousPirState && !showingTasks && !cooldownActive) {
-    startReminderCycle();
+    if (taskCount > 0) {
+      startReminderCycle();
+    }
   }
   previousPirState = pirState;
 
