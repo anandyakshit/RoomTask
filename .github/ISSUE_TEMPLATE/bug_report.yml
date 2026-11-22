@@ -1,0 +1,32 @@
+name: Bug report
+description: Create a report to help us improve RoomTask
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting an issue!
+  - type: textarea
+    id: problem-description
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Hardware Configuration
+      options:
+        - Arduino UNO R4 Minima
+        - Arduino UNO R4 WiFi
+        - Other (UNO R3, ESP32, etc.)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can someone reproduce this behavior?
+    validations:
+      required: true

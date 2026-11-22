@@ -3,6 +3,7 @@
   Board: Arduino UNO R4 Minima
   Inputs: PIR motion sensor (Pin D2)
   Output: 16x2 I2C LCD (SDA / SCL)
+  Optional: Passive Buzzer / Audio Chime (Pin D3)
   Communication: 
     - USB Serial (115200 baud)
     - Bluetooth UART / Serial1 (Pins 0 RX, 1 TX at 9600 baud)
@@ -16,6 +17,9 @@
 #include <LiquidCrystal_I2C.h>
 
 const byte PIR_PIN = 2;                 // Digital pin for PIR motion sensor
+const byte BUZZER_PIN = 3;              // Optional: connect a passive buzzer on Pin D3
+const bool ENABLE_BUZZER = false;       // Set to true to enable motion audio chime
+
 const byte LCD_ADDRESS = 0x27;          // Default I2C address (change to 0x3F if needed)
 const byte LCD_COLUMNS = 16;
 const byte LCD_ROWS = 2;
@@ -72,6 +76,14 @@ void broadcastPrint(int val) {
 void broadcastPrintln(int val) {
   Serial.println(val);
   Serial1.println(val);
+}
+
+void playChime() {
+  if (ENABLE_BUZZER) {
+    tone(BUZZER_PIN, 1047, 80); // C6 subtle chime
+    delay(100);
+    tone(BUZZER_PIN, 1319, 120); // E6 chime
+  }
 }
 
 void printHelp() {
@@ -198,6 +210,7 @@ void startReminderCycle() {
   displayedTask = 0;
   lastPageChange = millis();
   showCurrentTask();
+  playChime();
   broadcastPrintln(F("Motion detected: showing reminders."));
 }
 
@@ -223,6 +236,9 @@ void updateReminderDisplay() {
 
 void setup() {
   pinMode(PIR_PIN, INPUT);
+  if (ENABLE_BUZZER) {
+    pinMode(BUZZER_PIN, OUTPUT);
+  }
 
   // USB CDC Serial
   Serial.begin(USB_BAUD_RATE);

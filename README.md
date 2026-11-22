@@ -1,110 +1,153 @@
-# RoomTask: Arduino Motion-Activated Task Reminder
+# RoomTask: Smart Motion-Activated Arduino Task Reminder
 
-> **Difficulty:** Beginner &nbsp;|&nbsp; **Target Board:** Arduino UNO R4 Minima &nbsp;|&nbsp; **Status:** v0.2 (Physical Core Hardware-Verified &bull; Dual USB & Bluetooth UART Enabled)
+> **Difficulty:** Beginner &bull; **Time:** ~45 Minutes &bull; **Target Board:** Arduino UNO R4 Minima &bull; **Status:** v0.2 (Physical Bench-Verified &bull; Dual USB & Bluetooth UART Enabled)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Arduino CLI](https://img.shields.io/badge/Arduino%20CLI-renesas__uno-00979C.svg)](https://github.com/arduino/arduino-cli)
 [![Target: UNO R4 Minima](https://img.shields.io/badge/Target-UNO%20R4%20Minima-blue.svg)](https://store.arduino.cc/products/uno-r4-minima)
-[![Hardware: Bench-Tested](https://img.shields.io/badge/Hardware-Bench--Verified-brightgreen.svg)](docs/DEVLOG.md)
+[![Hardware: Bench-Verified](https://img.shields.io/badge/Hardware-Bench--Verified-brightgreen.svg)](docs/DEVLOG.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**RoomTask** is a beginner-friendly **Arduino PIR motion sensor LCD reminder project** built around the **Arduino UNO R4 Minima**, a passive infrared (PIR) motion sensor, a 16×2 character LCD with an I²C backpack, and a **Bluetooth module** for wireless smartphone control.
+**RoomTask** is a beginner-friendly **Arduino PIR motion sensor LCD reminder project** designed for the **Arduino UNO R4 Minima**. It detects whenever you enter your room or approach your desk and automatically triggers a 16×2 character LCD to cycle through your daily to-do tasks. 
 
-Whenever you enter your room or approach your desk, the PIR sensor detects motion and triggers the display to cycle through your active to-do reminders. Tasks can be added and managed either via **USB Serial** on your computer (115200 baud) or **wirelessly over Bluetooth** from your smartphone (9600 baud).
+Reminders can be added, viewed, and cleared wirelessly from your **smartphone over Bluetooth** or via **USB Serial** on your computer.
 
-RoomTask is designed as an accessible, hands-on DIY electronics project demonstrating motion sensing, I²C display management, non-blocking embedded C++ timers, and dual-interface serial communication.
+```text
+    +-------------------------------------------------------------------------+
+    |                                ROOMTASK                                 |
+    |                                                                         |
+    |  [ Walk into Room ] --> (PIR Motion Sensor)                             |
+    |                                |                                        |
+    |                                v                                        |
+    |                     (Arduino UNO R4 Minima)                             |
+    |                        |                 |                              |
+    |                        v                 v                              |
+    |                [ 16x2 I2C LCD ]   [ Dual Serial Ingestion ]             |
+    |                "Reminder 1/3"      - Bluetooth (Smartphone App)         |
+    |                "Water plants"      - USB CDC (Computer Terminal)        |
+    +-------------------------------------------------------------------------+
+```
+
+---
+
+## Why RoomTask Is Ranked Among the Best Beginner Arduino Projects
+
+Most beginner Arduino tutorials stop at blinking an onboard LED or printing numbers to a serial monitor. **RoomTask** provides a practical, real-world desktop device while teaching foundational embedded systems engineering principles:
+
+1. **Zero Soldering Required:** Built entirely with modular components on a standard breadboard using jumper wires.
+2. **Real-World Utility:** Solves a real problem (forgetting desk chores and daily reminders) upon entering your room.
+3. **Non-Blocking Architecture:** Teaches beginners how to write responsive embedded C++ code using `millis()` state checks instead of CPU-blocking `delay()` calls.
+4. **I²C Bus Mastery:** Demonstrates how 2-wire serial communication (`SDA` / `SCL`) drives a 16-pin character LCD with only 4 wires.
+5. **Dual-Interface Serial Communication:** Concurrent command processing across USB CDC serial and hardware UART (`Serial1`) Bluetooth.
 
 ---
 
 ## Hardware Requirements & Parts Table
 
-| Component | Specification / Model | Purpose | Arduino UNO R4 Pin |
+| Component | Recommended Model | Function | Pin on UNO R4 Minima |
 |---|---|---|---|
-| **Microcontroller** | Arduino UNO R4 Minima (Renesas RA4M1 32-bit) | Main controller, timers, and dual serial parser | — |
-| **Motion Sensor** | PIR Sensor (HC-SR501 or AM312) | Senses room entry motion events | `D2` (Digital In) |
-| **Display** | 16×2 Character LCD with PCF8574 I²C Backpack | Cycles through active reminders | Dedicated `SDA` / `SCL` |
-| **Wireless Module** | Bluetooth UART Module (HC-05, HC-06, HM-10, JDY-31) | Wireless task management from smartphone | `Pin 0 (RX1)` & `Pin 1 (TX1)` |
-| **Prototyping** | Breadboard & Jumper Wires | Power distribution (5V & GND rails) and signals | — |
-| **Power Supply** | 5V USB-C cable & phone charger / power bank | Standalone power for untethered room placement | — |
-
-> [!NOTE]
-> Detailed wiring tables, voltage safety considerations, and resistor divider recommendations for Bluetooth are documented in [hardware/README.md](hardware/README.md).
+| **Microcontroller** | Arduino UNO R4 Minima (Renesas RA4M1 32-bit ARM) | Core controller, timers, and dual serial parser | — |
+| **Motion Sensor** | PIR Sensor (HC-SR501, AM312) | Detects human motion upon room entry | `Pin D2` (Digital In) |
+| **Display** | 16×2 Character LCD with PCF8574 I²C Backpack | Cycles through saved reminder tasks | Dedicated `SDA` & `SCL` |
+| **Wireless Module** | Bluetooth UART Module (HC-05, HC-06, HM-10, JDY-31) | Wireless smartphone task management | `Pin 0 (RX1)` & `Pin 1 (TX1)` |
+| **Audio Chime (Optional)**| 5V Passive Piezo Buzzer | Subtle audio chime upon room entry | `Pin D3` (Digital Out) |
+| **Prototyping** | Half-size Breadboard & Male-to-Female Jumper Wires | Power distribution (5V & GND) & wiring | — |
+| **Power Supply** | 5V USB-C cable & phone charger or power bank | Untethered standalone room operation | USB-C Port |
 
 ---
 
-## Features
+## Complete Wiring Guide
 
-- **Motion-Triggered Reminder Cycles:** Detects room entry using a PIR digital input and automatically cycles through saved reminders.
-- **16×2 I²C Display Output:** Clean character rendering with non-blocking timing (10 seconds per task).
-- **Dual Communication Interfaces:**
-  - **USB Serial (115200 baud):** For fast terminal management when connected to a PC.
-  - **Bluetooth UART (9600 baud):** For wireless, phone-based reminder management from your couch or desk.
-- **Non-Blocking Motion Cooldown:** 30-second cooldown interval prevents repetitive screen flashing while you remain in the room.
-- **Instant Dual Broadcast:** Command confirmations and status messages are automatically mirrored to both USB Serial and Bluetooth.
-- **Standalone Untethered Operation:** Power the device with any standard 5V USB phone charger once programmed.
-
----
-
-## Repository Layout
+Connect the Arduino's **5V** and **GND** pins to the breadboard power rails, then wire each module:
 
 ```text
-RoomTask/
-├── docs/
-│   ├── ARCHITECTURE.md     # System architecture, data flow diagram, and state machine
-│   ├── DEVLOG.md           # Engineering log, CLI benchmarks, and hardware verification records
-│   └── SERIAL_COMMANDS.md  # USB and Bluetooth command reference and terminal app guides
-├── firmware/
-│   └── RoomTask/
-│       └── RoomTask.ino    # Main Arduino sketch (dual serial + I2C + PIR)
-├── hardware/
-│   └── README.md           # Complete wiring table, pinouts, and calibration guide
-├── .gitignore
-├── LICENSE                 # MIT License
-└── README.md
+               +-------------------------------------------+
+               |          Arduino UNO R4 Minima            |
+               |                                           |
+               | [AREF] [SDA] [SCL] [D13] ... [D2] [D1] [D0]
+               +---|------|-----|---------------|---|---|--+
+                   |      |     |               |   |   |
+                   |      |     |               |   |   +--[Pin 0/RX1] <--- TXD (Bluetooth)
+                   |      |     |               |   +------[Pin 1/TX1] ---> RXD (Bluetooth)*
+                   |      |     |               +----------[Pin D2]    <--- OUT (PIR Sensor)
+                   |      |     |
+               +---|------|-----+  (Power Pins)
+               |  5V     GND
+               +---|-------|----+
+                   |       |
+                   v       v
+         ===========================  (Breadboard Rails)
+            (+) 5V Rail     (-) GND Rail
+         ===========================
+            |        |          |        |
+            |        |          |        |
+         +--+--+  +--+--+    +--+--+  +--+--+
+         | VCC |  | GND |    | VCC |  | GND |
+         +-----+  +-----+    +-----+  +-----+
+          16x2 I2C LCD         PIR Sensor
+           [SDA]   [SCL]         [OUT]
+             |       |             |
+             +-------+-------------+ (To Arduino headers above)
 ```
+
+> [!TIP]
+> * **Bluetooth Logic Note:** The UNO R4 operates at 5V logic. For long-term reliability with 3.3V Bluetooth RX pins, use a simple 1kΩ / 2kΩ resistor divider between Arduino Pin 1 (TX1) and Bluetooth RXD. Bluetooth TXD connects directly to Pin 0 (RX1).
+> * For full step-by-step assembly diagrams and voltage safety notes, see [hardware/README.md](hardware/README.md).
 
 ---
 
 ## Quick Start Guide
 
-### 1. Compile & Upload via Arduino CLI
-
-The firmware has been compile-tested and verified with the Renesas UNO R4 platform core.
+### Option A: Arduino CLI (Terminal)
 
 ```bash
-# 1. Install board platform
+# 1. Install Renesas UNO R4 platform core
 arduino-cli core install arduino:renesas_uno
 
-# 2. Install I2C LCD library
+# 2. Install I2C LCD driver library
 arduino-cli lib install "LiquidCrystal I2C"
 
 # 3. Compile sketch
 arduino-cli compile --fqbn arduino:renesas_uno:minima firmware/RoomTask
 
-# 4. Upload to Arduino UNO R4 Minima (replace COMx with your port)
+# 4. Upload to board (replace COMx with your port)
 arduino-cli upload -p COMx --fqbn arduino:renesas_uno:minima firmware/RoomTask
 ```
 
----
+### Option B: Arduino IDE (GUI)
 
-### 2. Adding Reminders Wirelessly via Bluetooth (Smartphone)
-
-1. Connect your Bluetooth module:
-   - Module `VCC` &rarr; `5V`
-   - Module `GND` &rarr; `GND`
-   - Module `TXD` &rarr; Arduino `Pin 0 (RX1)`
-   - Module `RXD` &rarr; Arduino `Pin 1 (TX1)`
-2. On your smartphone, pair with your Bluetooth module (default pairing PIN is usually `1234` or `0000`).
-3. Open a serial terminal app:
-   - **Android:** *Serial Bluetooth Terminal* (by Kai Morich)
-   - **iOS / Web:** *Web Bluetooth Terminal* or *DSD TECH Tools*
-4. Connect to the module at **9600 baud** and send commands!
+1. Open **Tools > Board > Boards Manager**, search for `Arduino UNO R4 Boards`, and click **Install**.
+2. Open **Sketch > Include Library > Manage Libraries**, search for `LiquidCrystal I2C` (by Frank de Brabander / Marco Schwartz), and install it.
+3. Open `firmware/RoomTask/RoomTask.ino`.
+4. Select **Arduino UNO R4 Minima** and your COM port.
+5. Click **Upload** (`Ctrl+U` / `Cmd+U`).
 
 ---
 
-### 3. Adding Reminders via USB Serial (Computer)
+## How to Add Reminders
 
+### Method 1: Wirelessly from your Smartphone (Bluetooth)
+1. Pair your phone with your Bluetooth module (default PIN is usually `1234` or `0000`).
+2. Open any free serial terminal app:
+   * **Android:** *Serial Bluetooth Terminal* (by Kai Morich)
+   * **iOS / Web:** *Web Bluetooth Terminal* or *BLE Terminal*
+3. Connect at **9600 baud** and send commands:
+
+```text
+ADD Call dentist tomorrow
+Added: Call dentist tomorrow
+
+ADD Review pull request
+Added: Review pull request
+
+LIST
+Saved reminders:
+1. Call dentist tomorrow
+2. Review pull request
+```
+
+### Method 2: Tethered from your Computer (USB Serial)
 Open the Serial Monitor in the Arduino IDE or via Arduino CLI at **115200 baud** with **Newline** line endings:
-
 ```bash
 arduino-cli monitor -p COMx -c baudrate=115200
 ```
@@ -113,66 +156,57 @@ arduino-cli monitor -p COMx -c baudrate=115200
 
 ## Command Reference
 
-Commands are identical across both USB Serial and Bluetooth:
-
 | Command | Action | Example Input | Example Output |
 |---|---|---|---|
-| `ADD <text>` | Add a new reminder to memory (up to 40 chars) | `ADD Water the plants` | `Added: Water the plants` |
-| `LIST` | List all currently active reminders | `LIST` | `1. Water the plants` |
-| `CLEAR` | Wipe all reminders from memory | `CLEAR` | `All reminders cleared.` |
-| `HELP` | Print command list and active baud rates | `HELP` | Prints help text |
+| `ADD <text>` | Add a reminder to memory (up to 40 characters) | `ADD Buy milk` | `Added: Buy milk` |
+| `LIST` | List all saved reminders in sequence | `LIST` | `1. Buy milk` |
+| `CLEAR` | Wipe all reminders from active memory | `CLEAR` | `All reminders cleared.` |
+| `HELP` | Display list of supported commands | `HELP` | Prints command list |
 
-*Commands are case-insensitive. See [docs/SERIAL_COMMANDS.md](docs/SERIAL_COMMANDS.md) for full details.*
+*Commands are case-insensitive and can be sent via Bluetooth or USB interchangeably.*
 
 ---
 
-## Troubleshooting & FAQ
+## Educational Deep-Dive: Key Concepts You Will Learn
 
-### 1. LCD is illuminated but shows no text
-- **Adjust Contrast:** Turn the small blue potentiometer on the back of the I²C backpack with a screwdriver until text appears.
-- **I²C Address:** The default address in `RoomTask.ino` is `0x27`. If characters do not appear after adjusting contrast, change `LCD_ADDRESS` to `0x3F`.
+1. **Non-Blocking Timing (`millis()` vs `delay()`):**  
+   Most beginner sketches use `delay()`, which halts the microcontroller. In RoomTask, `millis()` timestamping is used so the Arduino continuously listens for incoming Bluetooth commands and monitors the PIR sensor while cycling tasks.
+2. **I²C Protocol (Inter-Integrated Circuit):**  
+   Learn how standard HD44780 LCD screens are driven using the PCF8574 backpack via two open-drain serial lines (`SDA` and `SCL`), freeing up 6+ digital pins for other sensors.
+3. **Hardware UART vs Native USB CDC:**  
+   Discover the difference between the native USB CDC serial channel on modern microcontrollers and dedicated hardware UART serial (`Serial1`), allowing dual simultaneous connections without software emulated bit-banging.
 
-### 2. Bluetooth module does not receive commands
-- **TX/RX Crossover:** Ensure Bluetooth `TXD` connects to Arduino `Pin 0 (RX1)`, and Bluetooth `RXD` connects to Arduino `Pin 1 (TX1)`.
-- **Baud Rate Mismatch:** Confirm your terminal app is connected at **9600 baud** (factory default for HC-05/06/HM-10).
-- **Line Endings:** Make sure your mobile terminal app is configured to send a newline (`\n` or `CR+LF`) when transmitting.
+---
 
-### 3. PIR sensor triggers continuously
-- **Warm-Up Calibration:** Allow **30 to 60 seconds** after power-on for the PIR sensor to stabilize to ambient room temperature.
-- **HC-SR501 Pots:** Set the time delay pot fully counter-clockwise (lowest delay) and set the jumper to **L** (single trigger).
+## Frequently Asked Questions (FAQ)
+
+### Can I build this on an Arduino UNO R3 or Nano?
+Yes. The sketch code is portable across the Arduino ecosystem. On an UNO R3 or Nano, `Serial` is shared between USB and Pins 0/1. On the UNO R4 Minima, `Serial` (USB) and `Serial1` (Pins 0/1) are independent hardware channels, which is why the UNO R4 offers true concurrent dual-stream operation.
+
+### Why is my LCD screen illuminated with no text?
+Turn the blue contrast potentiometer on the back of the I²C backpack with a small screwdriver until characters appear. If text still does not appear, your backpack's I²C address may be `0x3F` instead of the default `0x27` (change `LCD_ADDRESS` in the sketch).
+
+### Why does the PIR sensor trigger immediately upon power-on?
+PIR sensors require a **30 to 60-second stabilization period** to calibrate to ambient room thermal radiation. False triggers during the first minute are expected.
+
+### How do I power RoomTask permanently in my room?
+Once programmed, RoomTask requires no computer connection. Plug the Arduino into any 5V USB-A or USB-C wall adapter, phone charger, or power bank.
 
 ---
 
 ## Project Roadmap
 
-- [x] **v0.1 — Scaffold & Core Prototype:**
-  - PIR motion detection event loop & 16×2 I²C LCD page cycling.
-  - USB Serial CLI (`ADD`, `LIST`, `CLEAR`, `HELP`) at 115200 baud.
-  - Bench hardware verification on Arduino UNO R4 Minima.
-- [x] **v0.2 — Wireless Bluetooth Integration:**
-  - Added hardware `Serial1` UART support at 9600 baud for HC-05 / HM-10 modules.
-  - Dual-stream concurrent command parsing and unified message broadcasting.
-  - Untethered standalone operation via USB wall charger.
-- [ ] **v0.3 — Persistent Storage:**
-  - Store tasks in non-volatile storage (EEPROM / on-board Data Flash) so reminders persist across power resets.
-- [ ] **v0.4 — Real-Time Clock (RTC) Integration:**
-  - Leverage the UNO R4's built-in RTC for scheduled task alerts and timestamped reminders.
+- [x] **v0.1 — Core Motion & LCD Prototype:** PIR sensor loop, 16×2 LCD non-blocking state machine, USB Serial CLI.
+- [x] **v0.2 — Wireless Bluetooth & Hardware Verification:** Concurrently listening on hardware `Serial1` (9600 baud) and USB (115200 baud). Bench-verified on real hardware.
+- [ ] **v0.3 — Non-Volatile Persistent Storage:** EEPROM / on-board Data Flash emulation so tasks persist across reboots.
+- [ ] **v0.4 — Real-Time Clock (RTC) Integration:** Utilize the UNO R4's internal RTC for daily scheduled task alerts.
 
 ---
 
-## Current Status & Verification Notice
+## Contributing & Community
 
-> [!TIP]
-> **Core Hardware Verified:** The core PIR motion sensing, 16×2 I²C LCD driver, and Serial command engine have been physically bench-tested and verified functional on an Arduino UNO R4 Minima. The v0.2 dual Bluetooth/Serial firmware has been compile-tested and verified with `arduino-cli`. See [docs/DEVLOG.md](docs/DEVLOG.md) for detailed test records.
-
----
-
-## Contributing
-
-Contributions, bug reports, and hardware test reports are welcome! Open an issue or submit a pull request on GitHub.
-
----
+Contributions are warmly welcomed! Check out our [Community Showcase Kit](docs/COMMUNITY_SHOWCASE_KIT.md) or open an issue using our [beginner feature template](.github/ISSUE_TEMPLATE/feature_request.yml).
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is open-source and licensed under the [MIT License](LICENSE).
