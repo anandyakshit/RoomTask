@@ -30,6 +30,7 @@ const byte LCD_ROWS = 2;
 const unsigned long USB_BAUD_RATE = 115200;
 const unsigned long BT_BAUD_RATE  = 9600;   // Default baud for HC-05 / HC-06 / HM-10
 
+const unsigned long PIR_WARMUP_MS = 60000;  // 60-second PIR sensor warm-up
 const byte MAX_TASKS = 8;
 const byte TASK_LENGTH = 41;            // 40 characters plus null terminator
 const unsigned long PAGE_INTERVAL_MS = 10000;    // 10s per reminder on LCD
@@ -47,6 +48,10 @@ unsigned long lastPageChange = 0;
 unsigned long cooldownStartedAt = 0;
 bool cooldownActive = false;
 
+unsigned long bootTime = 0;
+bool warmupActive = true;
+int lastRemainingSec = -1;
+
 bool lastBtConnectedState = false;
 bool btSerialConnected = false;
 unsigned long lastBtTrafficMs = 0;
@@ -58,15 +63,12 @@ String btBuffer;
 // 1. Hardware detection via STATE pin on Pin D4 (digital HIGH) or Pin A0 (analog > 2V)
 // 2. Active serial traffic detection on Serial1 (within last 15 seconds)
 bool isBluetoothConnected() {
-  // Check Pin D4 (digital)
   if (digitalRead(BT_STATE_PIN) == HIGH) {
     return true;
   }
-  // Check Pin A0 (analog threshold > 400 for 3.3V logic levels)
   if (analogRead(A0) > 400) {
     return true;
   }
-  // Active Bluetooth communication fallback
   if (btSerialConnected && (millis() - lastBtTrafficMs < 15000)) {
     return true;
   }
@@ -166,7 +168,7 @@ void addTask(const String &taskText) {
 
   broadcastPrint(F("Added: "));
   broadcastPrintln(tasks[taskCount - 1]);
-  if (!showingTasks) {
+  if (!warmupActive && !showingTasks) {
     showIdleScreen();
   }
 }
@@ -194,7 +196,7 @@ void handleCommand(String command, bool fromBt) {
     lastBtTrafficMs = millis();
     if (!lastBtConnectedState) {
       lastBtConnectedState = true;
-      if (!showingTasks) showIdleScreen();
+      if (!warmupActive && !showingTasks) showIdleScreen();
     }
   }
 
@@ -209,7 +211,7 @@ void handleCommand(String command, bool fromBt) {
     taskCount = 0;
     showingTasks = false;
     broadcastPrintln(F("All reminders cleared."));
-    showIdleScreen();
+    if (!warmupActive) showIdleScreen();
   } else if (upper.startsWith("ADD ")) {
     addTask(command.substring(4));
   } else {
@@ -273,7 +275,7 @@ void updateReminderDisplay() {
 
 void setup() {
   pinMode(PIR_PIN, INPUT);
-  pinMode(BT_STATE_PIN, INPUT); // High-impedance input for 3.3V STATE pin
+  pinMode(BT_STATE_PIN, INPUT);
 
   if (ENABLE_BUZZER) {
     pinMode(BUZZER_PIN, OUTPUT);
@@ -287,18 +289,50 @@ void setup() {
   lcd.init();
   lcd.backlight();
   
-  // Screen initializes with:
-  // Row 0: RoomTask
-  // Row 1: Disconnected (or Connected)
-  lastBtConnectedState = isBluetoothConnected();
-  showIdleScreen();
+  bootTime = millis();
+  warmupActive = true;
+  lastRemainingSec = -1;
 
-  broadcastPrintln(F("\nRoomTask ready. Dual Serial (USB 115200 & Bluetooth 9600) active."));
+  // Initialize display with non-blocking warm-up screen
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(F("RoomTask init   "));
+  lcd.setCursor(0, 1);
+  lcd.print(F("60s remain      "));
+
+  broadcastPrintln(F("\nRoomTask ready. Starting 60s PIR warm-up."));
   printHelp();
 }
 
 void loop() {
+  // Always listen for commands (USB & Bluetooth) without any delay() blocking
   readSerialCommands();
+
+  // Non-blocking 60-second PIR warm-up countdown
+  if (warmupActive) {
+    unsigned long elapsed = millis() - bootTime;
+    if (elapsed < PIR_WARMUP_MS) {
+      int remaining = (int)((PIR_WARMUP_MS - elapsed + 999) / 1000);
+      if (remaining != lastRemainingSec) {
+        lastRemainingSec = remaining;
+        lcd.setCursor(0, 0);
+        lcd.print(F("RoomTask init   "));
+        lcd.setCursor(0, 1);
+        char buf[17];
+        snprintf(buf, sizeof(buf), "%-2ds remain     ", remaining);
+        lcd.print(buf);
+      }
+      return; // Skip PIR motion check while warming up
+    } else {
+      warmupActive = false;
+      broadcastPrintln(F("PIR warm-up complete. Ready for motion detection."));
+      if (taskCount > 0) {
+        startReminderCycle();
+      } else {
+        showIdleScreen();
+      }
+    }
+  }
 
   // Instant connection state check
   bool currentBt = isBluetoothConnected();
